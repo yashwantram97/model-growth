@@ -22,6 +22,7 @@ from config import ModelConfig, TrainingConfig
 from models.simple_model import SLM
 from utils.data import TinyStoriesDataset
 from transfer.simple_transfer import transition_to_moe, verify_functional_equivalence
+from transfer.simple_growth import scale_bilaterally
 
 
 def get_device():
@@ -55,12 +56,51 @@ def train_phase(model, dataset, steps, lr, label, device, model_config, training
     S = model_config.seq_len
     log_every = training_config.log_every
 
-    param_count = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"\n{'=' * 60}")
-    print(f"  {label}")
-    print(f"  Steps: {steps}  |  LR: {lr}  |  Device: {device}")
-    print(f"  Params: {param_count:.2f} M")
-    print(f"{'=' * 60}")
+    # Calculate total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    
+    # Calculate active parameters for MoE models
+    first_ffn = model.blocks[0].ffn
+    is_moe = hasattr(first_ffn, 'experts')
+    
+    if is_moe:
+        num_experts = first_ffn.num_experts
+        top_k = first_ffn.top_k
+        
+        # Calculate per-expert FFN params
+        expert_params = sum(p.numel() for p in first_ffn.experts[0].parameters())
+        router_params = sum(p.numel() for p in first_ffn.router.parameters())
+        
+        # Total FFN params per block = (all experts + router)
+        total_ffn_params_per_block = (expert_params * num_experts) + router_params
+        
+        # Active FFN params per block = (top_k experts + router)
+        active_ffn_params_per_block = (expert_params * top_k) + router_params
+        
+        # Calculate for all blocks
+        num_blocks = len(model.blocks)
+        inactive_params = (total_ffn_params_per_block - active_ffn_params_per_block) * num_blocks
+        active_params = total_params - inactive_params
+        
+        print(f"\n{'=' * 60}")
+        print(f"  {label}")
+        print(f"  Steps: {steps}  |  LR: {lr}  |  Device: {device}")
+        print(f"  ─────────────────────────────────────────────────────────")
+        print(f"  Total Parameters:  {total_params / 1e6:>8.2f} M")
+        print(f"  Active Params/tok: {active_params / 1e6:>8.2f} M  (top-{top_k} of {num_experts} experts)")
+        print(f"  Inactive Params:   {inactive_params / 1e6:>8.2f} M  ({(num_experts - top_k) * num_blocks} experts idle)")
+        print(f"  ─────────────────────────────────────────────────────────")
+        print(f"  Efficiency: {(active_params / total_params) * 100:.1f}% active per forward pass")
+        print(f"{'=' * 60}")
+    else:
+        print(f"\n{'=' * 60}")
+        print(f"  {label}")
+        print(f"  Steps: {steps}  |  LR: {lr}  |  Device: {device}")
+        print(f"  ─────────────────────────────────────────────────────────")
+        print(f"  Total Parameters:  {total_params / 1e6:>8.2f} M")
+        print(f"  Active Params/tok: {total_params / 1e6:>8.2f} M  (Dense model)")
+        print(f"  ─────────────────────────────────────────────────────────")
+        print(f"{'=' * 60}")
 
     loss_log = []
     start = time.time()
@@ -113,20 +153,32 @@ def print_phase_results(label, loss_log, model, dataset, device, model_config, t
 
     # ── parameter count ───────────────────────────────────────────────
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"  Total params: {total_params / 1e6:.2f} M")
-
+    
     # For MoE models estimate active params per token
     first_ffn = model.blocks[0].ffn
     if hasattr(first_ffn, 'experts'):
         num_experts = first_ffn.num_experts
         top_k = first_ffn.top_k
-        # FFN params per expert = w1 + w2 weights & biases
-        ffn_params_per_expert = sum(p.numel() for p in first_ffn.experts[0].parameters())
-        inactive_per_block = ffn_params_per_expert * (num_experts - top_k)
-        inactive_total = inactive_per_block * len(model.blocks)
-        active_params = total_params - inactive_total
-        print(f"  Active params (top-{top_k} of {num_experts}): "
-              f"{active_params / 1e6:.2f} M per token")
+        
+        # Calculate per-expert FFN params
+        expert_params = sum(p.numel() for p in first_ffn.experts[0].parameters())
+        router_params = sum(p.numel() for p in first_ffn.router.parameters())
+        
+        # Total FFN params per block
+        total_ffn_params_per_block = (expert_params * num_experts) + router_params
+        active_ffn_params_per_block = (expert_params * top_k) + router_params
+        
+        # Calculate for all blocks
+        num_blocks = len(model.blocks)
+        inactive_params = (total_ffn_params_per_block - active_ffn_params_per_block) * num_blocks
+        active_params = total_params - inactive_params
+        
+        print(f"  Total params:      {total_params / 1e6:.2f} M")
+        print(f"  Active params/tok: {active_params / 1e6:.2f} M  (top-{top_k} of {num_experts} experts)")
+        print(f"  Efficiency:        {(active_params / total_params) * 100:.1f}% active per forward pass")
+    else:
+        print(f"  Total params:      {total_params / 1e6:.2f} M")
+        print(f"  Active params/tok: {total_params / 1e6:.2f} M  (Dense model)")
 
     # ── sample greedy decoding ────────────────────────────────────────
     prompts = [
@@ -294,22 +346,84 @@ def main():
     print(f"✓ Saved final MoE model to {checkpoint_path}")
 
     # ============================================================
+    # PHASE 3  —  Bilateral Growth (Scale Width & Depth)
+    # ============================================================
+    print("\n" + "=" * 60)
+    print("  PHASE 3  —  Bilateral Growth (Width x2, Layers +4)")
+    print("=" * 60)
+
+    # 1. Perform the expansion
+    # We expand the CURRENT 'moe_model' (which is small) into a larger one
+    large_model = scale_bilaterally(
+        moe_model, 
+        scale_factor=2,   # 1.5x Hidden Dim (832 -> 1248), 1.5x Heads (8 -> 12)
+        extra_layers=4,     # Add 2 layers (7 -> 9) - conservative for testing
+        noise_std=1e-5      # Small noise to let heads diverge (MLA)
+    ).to(device)
+
+    # 2. Verify Functional Preservation (Crucial!)
+    # The output on the 'probe' should be VERY close to the small model
+    # Note: It won't be EXACT zero difference due to floating point math 
+    # and the 'noise' we added, but it should be small.
+    print("\n  [Verification] Checking Growth Preservation...")
+    verify_functional_equivalence(moe_model, large_model, probe, device)
+    
+    # 3. Release memory of the small model
+    del moe_model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
+
+    # 4. Train the Large Model
+    # Note: You might want a slightly smaller LR for a larger model
+    large_model, phase3_log = train_phase(
+        large_model, dataset,
+        steps=training_config.steps_phase3,
+        lr=training_config.lr_phase2 * 0.8,  # Slightly lower LR
+        label="Phase 3 — Large MoE (Bilateral Growth)",
+        device=device,
+        model_config=model_config,
+        training_config=training_config,
+    )
+
+    # ── Print Phase 3 results ─────────────────────────────────────────
+    print_phase_results("Phase 3 — Large MoE (Bilateral Growth)", phase3_log,
+                        large_model, dataset, device, model_config, training_config)
+
+    # Save final Large model
+    checkpoint_path = Path(training_config.checkpoint_dir) / "large_moe_final.pt"
+    torch.save({
+        'model_state_dict': large_model.state_dict(),
+        'loss_log': phase3_log,
+    }, checkpoint_path)
+    print(f"✓ Saved Large MoE model to {checkpoint_path}")
+
+    # ============================================================
     # BOUNDARY SUMMARY
     # ============================================================
     p1_end = phase1_log[-1][1]
     p2_start = phase2_log[0][1]
     p2_end = phase2_log[-1][1]
+    p3_start = phase3_log[0][1]
+    p3_end = phase3_log[-1][1]
 
     print("=" * 60)
     print("  BOUNDARY SUMMARY")
     print("=" * 60)
-    print(f"  Phase 1 final loss  :  {p1_end:.4f}")
-    print(f"  Phase 2 first loss  :  {p2_start:.4f}")
-    print(f"  Phase 2 final loss  :  {p2_end:.4f}")
-    print(f"  Boundary jump       :  {abs(p2_start - p1_end):.4f}")
+    print(f"  Phase 1 final loss      :  {p1_end:.4f}")
+    print(f"  Phase 2 first loss      :  {p2_start:.4f}")
+    print(f"  Phase 2 final loss      :  {p2_end:.4f}")
+    print(f"  Phase 1→2 jump          :  {abs(p2_start - p1_end):.4f}")
     print(f"    (small jump is normal — it's a different random batch,")
     print(f"     NOT a loss spike from the conversion)")
-    print(f"  Phase 2 total drop  :  {p2_start - p2_end:.4f}")
+    print(f"  Phase 2 total drop      :  {p2_start - p2_end:.4f}")
+    print()
+    print(f"  Phase 3 first loss      :  {p3_start:.4f}")
+    print(f"  Phase 3 final loss      :  {p3_end:.4f}")
+    print(f"  Phase 2→3 jump          :  {abs(p3_start - p2_end):.4f}")
+    print(f"    (should be VERY small due to functional preservation)")
+    print(f"  Phase 3 total drop      :  {p3_start - p3_end:.4f}")
     print("=" * 60)
 
     # ── Save log ──────────────────────────────────────────────────────
@@ -322,8 +436,12 @@ def main():
             f.write(json.dumps({"phase": 2,
                                 "step": step + training_config.steps_phase1,
                                 "loss": round(loss, 6)}) + "\n")
+        for step, loss in phase3_log:
+            f.write(json.dumps({"phase": 3,
+                                "step": step + training_config.steps_phase1 + training_config.steps_phase2,
+                                "loss": round(loss, 6)}) + "\n")
     print(f"\n  Logs saved → {log_path}")
-    print("\n✓ Experiment completed successfully!")
+    print("\n✓ 3-Phase Experiment completed successfully!")
 
 
 if __name__ == "__main__":
