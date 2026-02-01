@@ -1,0 +1,13 @@
+[project]
+name = "minimal-exp-growth"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "datasets>=4.5.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "tqdm>=4.67.2",
+    "transformers>=5.0.0",
+]
