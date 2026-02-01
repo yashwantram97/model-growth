@@ -38,10 +38,12 @@ class TrainingConfig:
     # Training phases
     steps_phase1: int = 1000  # Dense training steps
     steps_phase2: int = 1000  # MoE training steps
+    steps_phase3: int = 1000  # Large MoE (post-growth) training steps
     
     # Optimization
     lr_phase1: float = 3e-4
     lr_phase2: float = 1e-4  # Lower LR after upcycling
+    lr_phase3: float = 8e-5  # Even lower LR for large model (0.8 * lr_phase2)
     weight_decay: float = 0.01
     batch_size: int = 8
     

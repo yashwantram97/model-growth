@@ -23,6 +23,7 @@ from models.simple_model import SLM
 from utils.data import TinyStoriesDataset
 from transfer.simple_transfer import transition_to_moe, verify_functional_equivalence
 from transfer.simple_growth import scale_bilaterally
+from transfer.verify_growth_mechanics import detailed_growth_check, quick_sanity_check
 
 
 def get_device():
@@ -298,6 +299,7 @@ def main():
     ).to(device)
 
     # ── Verify: same probe → same logits? ─────────────────────────────
+    print("\n[Phase 1→2 Verification] Basic functional equivalence check...")
     verify_functional_equivalence(dense_model, moe_model, probe, device)
 
     # Save initial MoE model
@@ -354,19 +356,32 @@ def main():
 
     # 1. Perform the expansion
     # We expand the CURRENT 'moe_model' (which is small) into a larger one
+    scale_factor = 2
+    noise_std = 1e-5
+    
     large_model = scale_bilaterally(
         moe_model, 
-        scale_factor=2,   # 1.5x Hidden Dim (832 -> 1248), 1.5x Heads (8 -> 12)
-        extra_layers=4,     # Add 2 layers (7 -> 9) - conservative for testing
-        noise_std=1e-5      # Small noise to let heads diverge (MLA)
+        scale_factor=scale_factor,  # 2x Hidden Dim (832 -> 1664), 2x Heads (8 -> 16)
+        extra_layers=4,              # Add 4 layers (7 -> 11)
+        noise_std=noise_std          # Small noise to let heads diverge (MLA)
     ).to(device)
 
-    # 2. Verify Functional Preservation (Crucial!)
-    # The output on the 'probe' should be VERY close to the small model
-    # Note: It won't be EXACT zero difference due to floating point math 
-    # and the 'noise' we added, but it should be small.
-    print("\n  [Verification] Checking Growth Preservation...")
-    verify_functional_equivalence(moe_model, large_model, probe, device)
+    # 2. Comprehensive Verification (All Growth Mechanics)
+    # This runs 4 critical checks:
+    #   1. RoPE Integrity (head dimensions preserved)
+    #   2. Router Logit Scaling (prevents expert collapse)
+    #   3. Symmetry Breaking (gradients diverge)
+    #   4. Functional Identity (layer-by-layer equivalence)
+    print("\n[Phase 2→3 Verification] Running comprehensive growth mechanics checks...")
+    
+    detailed_growth_check(
+        old_model=moe_model,
+        new_model=large_model,
+        probe=probe,
+        device=device,
+        scale_factor=scale_factor,
+        tolerance=1e-4
+    )
     
     # 3. Release memory of the small model
     del moe_model
@@ -376,11 +391,11 @@ def main():
         torch.mps.empty_cache()
 
     # 4. Train the Large Model
-    # Note: You might want a slightly smaller LR for a larger model
+    # Note: Using lower LR for larger model to ensure stable training
     large_model, phase3_log = train_phase(
         large_model, dataset,
         steps=training_config.steps_phase3,
-        lr=training_config.lr_phase2 * 0.8,  # Slightly lower LR
+        lr=training_config.lr_phase3,  # Lower LR for large model
         label="Phase 3 — Large MoE (Bilateral Growth)",
         device=device,
         model_config=model_config,
