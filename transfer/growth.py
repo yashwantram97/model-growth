@@ -1,11 +1,11 @@
 """
-Bilateral Growth Implementation for simple_model.py
+Bilateral Growth Implementation for model.py
 Scales Width (HyperCloning) and Depth (Gstack) while preserving function.
 """
 
 import torch
 import torch.nn as nn
-from models.simple_model import SLM, TransformerBlock, MoELayer
+from models.model import SLM, TransformerBlock, MoELayer
 
 
 def hyperclone_weight(weight, scale_factor=2, noise_std=0.0, dim_mode="both"):
@@ -118,7 +118,7 @@ def scale_bilaterally(old_model, scale_factor=2, extra_layers=4, noise_std=1e-5)
     )
     
     # Final Head (Case 2: Input only - Logic: d_model grows, vocab stays same)
-    # Note: simple_model ties weights, but if they weren't tied, we'd do this:
+    # Note: model ties weights, but if they weren't tied, we'd do this:
     if not isinstance(new_model.head, nn.Identity):  # Just in case logic changes
         new_model.head.weight.copy_(
             hyperclone_weight(old_model.head.weight, scale_factor, 0, "in")

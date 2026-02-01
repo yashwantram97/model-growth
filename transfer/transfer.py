@@ -1,4 +1,4 @@
-"""Weight transfer for simple models (SmolLM-style architecture)."""
+"""Weight transfer for models (SmolLM-style architecture)."""
 
 import torch
 import torch.nn as nn
@@ -20,7 +20,7 @@ def transition_to_moe(dense_model, num_experts: int, top_k: int):
     Returns:
         moe_model: New MoE model with transferred weights
     """
-    from models.simple_model import SLM
+    from models.model import SLM
     
     vocab_size = dense_model.embed.num_embeddings
     d_model = dense_model.embed.embedding_dim

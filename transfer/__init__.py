@@ -1,19 +1,21 @@
 """Weight transfer utilities."""
 
-from .weight_transfer import (
-    transfer_dense_to_moe, 
-    verify_functional_identity, 
-    analyze_expert_diversity
-)
-from .simple_transfer import (
+from .transfer import (
     transition_to_moe,
     verify_functional_equivalence,
 )
+from .growth import (
+    scale_bilaterally,
+)
+from .verify_growth_mechanics import (
+    detailed_growth_check,
+    quick_sanity_check,
+)
 
 __all__ = [
-    'transfer_dense_to_moe', 
-    'verify_functional_identity', 
-    'analyze_expert_diversity',
     'transition_to_moe',
     'verify_functional_equivalence',
+    'scale_bilaterally',
+    'detailed_growth_check',
+    'quick_sanity_check',
 ]
