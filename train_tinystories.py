@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from torch.optim import AdamW
 import time
 import json
+import gc
 from pathlib import Path
 
 from config import ModelConfig, TrainingConfig
@@ -276,6 +277,12 @@ def main():
         'loss_log': phase1_log,
     }, checkpoint_path)
     print(f"✓ Saved dense model to {checkpoint_path}")
+    
+    # Clear cache after Phase 1
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
 
     # ============================================================
     # FREEZE A PROBE BATCH  (real TinyStories tokens)
@@ -347,16 +354,22 @@ def main():
         'loss_log': phase2_log,
     }, checkpoint_path)
     print(f"✓ Saved final MoE model to {checkpoint_path}")
+    
+    # Clear cache after Phase 2
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
 
     # ============================================================
-    # PHASE 3  —  Bilateral Growth to ~280M Active (Width Scaling)
+    # PHASE 3  —  Bilateral Growth to ~250M Active (Width Scaling)
     # ============================================================
     print("\n" + "=" * 60)
-    print("  PHASE 3  —  Growth to ~280M Active (Width: 512→1024 dim)")
+    print("  PHASE 3  —  Growth to ~250M Active (Width: 512→1024 dim)")
     print("=" * 60)
 
-    # 1. Perform width expansion (double width to reach ~280M active)
-    # From 12 layers at ~90M active → 12 layers at ~350M active (2x width)
+    # 1. Perform width expansion (double width to reach ~250M active)
+    # From 5 layers at ~62M active → 5 layers at ~250M active (2x width)
     scale_factor_p3 = 2   # Double width (512 → 1024)
     extra_layers_p3 = 0   # Keep same number of layers
     noise_std = 1e-4      # Increased from 1e-5 for better symmetry breaking
@@ -380,8 +393,18 @@ def main():
         tolerance=0.5       # Relaxed to accept noise-induced drift (0.48 max observed); checks are informational
     )
     
-    # 3. Release memory of the small model
+    # 3. Release memory of the small model and clear cache aggressively
     del moe_model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()  # Ensure all operations complete
+    elif device.type == "mps":
+        torch.mps.empty_cache()
+        torch.mps.synchronize()
+    
+    # Additional cache clear before training
+    import gc
+    gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
     elif device.type == "mps":
@@ -393,7 +416,7 @@ def main():
         medium_model, dataset,
         steps=training_config.steps_phase3,
         lr=training_config.lr_phase3,
-        label="Phase 3 — Medium MoE (~300M Active)",
+        label="Phase 3 — Medium MoE (~250M Active)",
         device=device,
         model_config=model_config,
         training_config=training_config,
@@ -401,7 +424,7 @@ def main():
     )
 
     # ── Print Phase 3 results ─────────────────────────────────────────
-    print_phase_results("Phase 3 — Medium MoE (~300M Active)", phase3_log,
+    print_phase_results("Phase 3 — Medium MoE (~250M Active)", phase3_log,
                         medium_model, dataset, device, model_config, training_config)
 
     # Save Medium model
@@ -411,18 +434,24 @@ def main():
         'loss_log': phase3_log,
     }, checkpoint_path)
     print(f"✓ Saved Medium MoE model to {checkpoint_path}")
+    
+    # Clear cache after Phase 3
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
 
     # ============================================================
-    # PHASE 4  —  Depth Growth to ~450M Active
+    # PHASE 4  —  Depth Growth to ~400M Active
     # ============================================================
     print("\n" + "=" * 60)
-    print("  PHASE 4  —  Growth to ~450M Active (Depth: 12→15 layers)")
+    print("  PHASE 4  —  Growth to ~400M Active (Depth: 5→8 layers)")
     print("=" * 60)
 
     # 1. Perform depth expansion (add layers while keeping width)
-    # From 12 layers at ~350M active → 15 layers at ~450M active (1.25x)
+    # From 5 layers at ~250M active → 8 layers at ~400M active (1.6x)
     scale_factor_p4 = 1  # No width scaling (keep 1024 dim)
-    extra_layers_p4 = 3  # 12 → 15 layers
+    extra_layers_p4 = 3  # 5 → 8 layers
     noise_std_p4 = 1e-4  # Noise for depth growth
     
     # Create probe for verification
@@ -431,7 +460,7 @@ def main():
     large_model = scale_bilaterally(
         medium_model, 
         scale_factor=scale_factor_p4,  # No width change (stay at 1024)
-        extra_layers=extra_layers_p4,   # Add 3 layers (12 → 15)
+        extra_layers=extra_layers_p4,   # Add 3 layers (5 → 8)
         noise_std=noise_std_p4          # Noise for Gstack
     ).to(device)
 
@@ -447,8 +476,18 @@ def main():
         tolerance=1e-4
     )
     
-    # 3. Release memory of the medium model
+    # 3. Release memory of the medium model and clear cache aggressively
     del medium_model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()  # Ensure all operations complete
+    elif device.type == "mps":
+        torch.mps.empty_cache()
+        torch.mps.synchronize()
+    
+    # Additional cache clear before training
+    import gc
+    gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
     elif device.type == "mps":
@@ -460,7 +499,7 @@ def main():
         large_model, dataset,
         steps=training_config.steps_phase4,
         lr=training_config.lr_phase4,
-        label="Phase 4 — Large MoE (~1B Active)",
+        label="Phase 4 — Large MoE (~400M Active)",
         device=device,
         model_config=model_config,
         training_config=training_config,
@@ -468,7 +507,7 @@ def main():
     )
 
     # ── Print Phase 4 results ─────────────────────────────────────────
-    print_phase_results("Phase 4 — Large MoE (~1B Active)", phase4_log,
+    print_phase_results("Phase 4 — Large MoE (~400M Active)", phase4_log,
                         large_model, dataset, device, model_config, training_config)
 
     # Save Large model
@@ -537,14 +576,14 @@ def main():
     print("\n" + "=" * 60)
     print("  GROWTH PROGRESSION SUMMARY")
     print("=" * 60)
-    print("  Phase 1 (Dense):     12 layers ×  512 dim → ~70M params")
-    print("  Phase 2 (MoE):       12 layers ×  512 dim → ~90M active, ~240M total")
-    print("  Phase 3 (Width×2):   12 layers × 1024 dim → ~350M active, ~950M total")
-    print("  Phase 4 (Depth+3):   15 layers × 1024 dim → ~450M active, ~1.2B total")
+    print("  Phase 1 (Dense):      5 layers ×  512 dim → ~41M params")
+    print("  Phase 2 (MoE):        5 layers ×  512 dim → ~62M active, ~170M total")
+    print("  Phase 3 (Width×2):    5 layers × 1024 dim → ~250M active, ~680M total")
+    print("  Phase 4 (Depth+3):    8 layers × 1024 dim → ~400M active, ~1.1B total")
     print("=" * 60)
     print()
-    print("  Strategy: Width scaling (512→1024), then depth scaling (12→15)")
-    print("  Memory: Phase 4 uses ~14GB with Adam optimizer (fits in 22GB GPU)")
+    print("  Strategy: Wider & shallower start (512 dim, 5 layers), 4× FFN ratio")
+    print("  Memory: Phase 4 uses ~16-17GB with Adam optimizer (fits in 22GB GPU)")
     print("=" * 60)
 
 
