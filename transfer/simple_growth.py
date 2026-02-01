@@ -14,7 +14,7 @@ def hyperclone_weight(weight, scale_factor=2, noise_std=0.0, dim_mode="both"):
     
     Args:
         weight: Original weight tensor
-        scale_factor: How much to expand (integer, usually 2)
+        scale_factor: How much to expand (must be integer, usually 2)
         noise_std: Standard deviation for symmetry-breaking noise
         dim_mode: 
             - 'both': Expand input and output (Linear layers, Attention)
@@ -24,6 +24,11 @@ def hyperclone_weight(weight, scale_factor=2, noise_std=0.0, dim_mode="both"):
     Returns:
         Expanded weight tensor
     """
+    # Ensure scale_factor is an integer for repeat operations
+    scale_factor = int(scale_factor)
+    if scale_factor < 1:
+        raise ValueError(f"scale_factor must be >= 1, got {scale_factor}")
+    
     with torch.no_grad():
         w = weight.data
         
@@ -41,12 +46,12 @@ def hyperclone_weight(weight, scale_factor=2, noise_std=0.0, dim_mode="both"):
             w_new = w_new / scale_factor
             
         elif dim_mode == "out":
-            # Shape: [Out, In] -> [Out*S, In] (e.g., Embeddings)
+            # Shape: [Out, In] -> [Out, In*S] (e.g., Embeddings)
             # Or [Dim] -> [Dim*S] (RMSNorm)
             if w.dim() == 1:
                 w_new = w.repeat(scale_factor)
             else:
-                w_new = w.repeat(scale_factor, 1)
+                w_new = w.repeat(1, scale_factor)
             # No division needed for output expansion (magnitude preserved by Norm later)
             
         # 2. Symmetry Breaking (Noise)
@@ -69,22 +74,28 @@ def scale_bilaterally(old_model, scale_factor=2, extra_layers=4, noise_std=1e-5)
     
     Args:
         old_model: The trained small MoE model.
-        scale_factor: Multiplier for width (d_model, n_heads, d_ff).
+        scale_factor: Multiplier for width (d_model, n_heads, d_ff). Must be integer >= 1.
         extra_layers: Number of new layers to stack (Gstack).
         noise_std: Amount of noise to break symmetry.
         
     Returns:
         new_model: The expanded, function-preserving model.
     """
+    # Validate scale_factor is an integer
+    if not isinstance(scale_factor, int) and scale_factor != int(scale_factor):
+        raise ValueError(f"scale_factor must be an integer (got {scale_factor}). "
+                        f"HyperCloning uses tensor.repeat() which requires integer repetitions.")
+    scale_factor = int(scale_factor)
+    
     print(f"\n[Bilateral Growth] Scaling x{scale_factor} width, +{extra_layers} layers...")
     
     # --- 1. Calculate New Config ---
     config = {
         'vocab_size': old_model.embed.num_embeddings,
-        'd_model': old_model.embed.embedding_dim * scale_factor,
+        'd_model': int(old_model.embed.embedding_dim * scale_factor),
         'n_layers': len(old_model.blocks) + extra_layers,
-        'n_heads': old_model.blocks[0].attention.n_heads * scale_factor,  # Double heads to keep head_dim constant (RoPE safe)
-        'd_ff': old_model.blocks[0].ffn.experts[0].w1.out_features * scale_factor,
+        'n_heads': int(old_model.blocks[0].attention.n_heads * scale_factor),  # Scale heads to keep head_dim constant (RoPE safe)
+        'd_ff': int(old_model.blocks[0].ffn.experts[0].w1.out_features * scale_factor),
         'use_moe': True,
         'num_experts': old_model.blocks[0].ffn.num_experts,
         'top_k': old_model.blocks[0].ffn.top_k,

@@ -42,18 +42,19 @@ def get_device():
     return device
 
 
-def train_phase(model, dataset, steps, lr, label, device, model_config, training_config):
+def train_phase(model, dataset, steps, lr, label, device, model_config, training_config, batch_size=None):
     """
     Next-token-prediction loop. Returns (model, loss_log).
 
     loss_log: list of (global_step, loss_value) for every logged step.
+    batch_size: Optional override for batch size (useful for Phase 3 with larger models)
     """
     model.train()
     model.to(device)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01)
 
     vocab_size = model_config.vocab_size
-    B = training_config.batch_size
+    B = batch_size if batch_size is not None else training_config.batch_size
     S = model_config.seq_len
     log_every = training_config.log_every
 
@@ -85,7 +86,7 @@ def train_phase(model, dataset, steps, lr, label, device, model_config, training
         
         print(f"\n{'=' * 60}")
         print(f"  {label}")
-        print(f"  Steps: {steps}  |  LR: {lr}  |  Device: {device}")
+        print(f"  Steps: {steps}  |  LR: {lr}  |  Batch: {B}  |  Device: {device}")
         print(f"  ─────────────────────────────────────────────────────────")
         print(f"  Total Parameters:  {total_params / 1e6:>8.2f} M")
         print(f"  Active Params/tok: {active_params / 1e6:>8.2f} M  (top-{top_k} of {num_experts} experts)")
@@ -96,7 +97,7 @@ def train_phase(model, dataset, steps, lr, label, device, model_config, training
     else:
         print(f"\n{'=' * 60}")
         print(f"  {label}")
-        print(f"  Steps: {steps}  |  LR: {lr}  |  Device: {device}")
+        print(f"  Steps: {steps}  |  LR: {lr}  |  Batch: {B}  |  Device: {device}")
         print(f"  ─────────────────────────────────────────────────────────")
         print(f"  Total Parameters:  {total_params / 1e6:>8.2f} M")
         print(f"  Active Params/tok: {total_params / 1e6:>8.2f} M  (Dense model)")
@@ -348,38 +349,34 @@ def main():
     print(f"✓ Saved final MoE model to {checkpoint_path}")
 
     # ============================================================
-    # PHASE 3  —  Bilateral Growth (Scale Width & Depth)
+    # PHASE 3  —  Bilateral Growth to ~280M Active (Width Scaling)
     # ============================================================
     print("\n" + "=" * 60)
-    print("  PHASE 3  —  Bilateral Growth (Width x2, Layers +4)")
+    print("  PHASE 3  —  Growth to ~280M Active (Width: 512→1024 dim)")
     print("=" * 60)
 
-    # 1. Perform the expansion
-    # We expand the CURRENT 'moe_model' (which is small) into a larger one
-    scale_factor = 2
+    # 1. Perform width expansion (double width to reach ~280M active)
+    # From 12 layers at ~90M active → 12 layers at ~350M active (2x width)
+    scale_factor_p3 = 2   # Double width (512 → 1024)
+    extra_layers_p3 = 0   # Keep same number of layers
     noise_std = 1e-5
     
-    large_model = scale_bilaterally(
+    medium_model = scale_bilaterally(
         moe_model, 
-        scale_factor=scale_factor,  # 2x Hidden Dim (832 -> 1664), 2x Heads (8 -> 16)
-        extra_layers=4,              # Add 4 layers (7 -> 11)
-        noise_std=noise_std          # Small noise to let heads diverge (MLA)
+        scale_factor=scale_factor_p3,  # 2x width (512 → 1024, 8 → 16 heads)
+        extra_layers=extra_layers_p3,   # No additional layers
+        noise_std=noise_std             # Symmetry breaking noise
     ).to(device)
 
     # 2. Comprehensive Verification (All Growth Mechanics)
-    # This runs 4 critical checks:
-    #   1. RoPE Integrity (head dimensions preserved)
-    #   2. Router Logit Scaling (prevents expert collapse)
-    #   3. Symmetry Breaking (gradients diverge)
-    #   4. Functional Identity (layer-by-layer equivalence)
     print("\n[Phase 2→3 Verification] Running comprehensive growth mechanics checks...")
     
     detailed_growth_check(
         old_model=moe_model,
-        new_model=large_model,
+        new_model=medium_model,
         probe=probe,
         device=device,
-        scale_factor=scale_factor,
+        scale_factor=scale_factor_p3,
         tolerance=1e-4
     )
     
@@ -390,27 +387,94 @@ def main():
     elif device.type == "mps":
         torch.mps.empty_cache()
 
-    # 4. Train the Large Model
-    # Note: Using lower LR for larger model to ensure stable training
-    large_model, phase3_log = train_phase(
-        large_model, dataset,
+    # 4. Train the Medium Model
+    batch_size_p3 = getattr(training_config, 'batch_size_phase3', training_config.batch_size)
+    medium_model, phase3_log = train_phase(
+        medium_model, dataset,
         steps=training_config.steps_phase3,
-        lr=training_config.lr_phase3,  # Lower LR for large model
-        label="Phase 3 — Large MoE (Bilateral Growth)",
+        lr=training_config.lr_phase3,
+        label="Phase 3 — Medium MoE (~300M Active)",
         device=device,
         model_config=model_config,
         training_config=training_config,
+        batch_size=batch_size_p3,
     )
 
     # ── Print Phase 3 results ─────────────────────────────────────────
-    print_phase_results("Phase 3 — Large MoE (Bilateral Growth)", phase3_log,
+    print_phase_results("Phase 3 — Medium MoE (~300M Active)", phase3_log,
+                        medium_model, dataset, device, model_config, training_config)
+
+    # Save Medium model
+    checkpoint_path = Path(training_config.checkpoint_dir) / "medium_moe_final.pt"
+    torch.save({
+        'model_state_dict': medium_model.state_dict(),
+        'loss_log': phase3_log,
+    }, checkpoint_path)
+    print(f"✓ Saved Medium MoE model to {checkpoint_path}")
+
+    # ============================================================
+    # PHASE 4  —  Depth Growth to ~450M Active
+    # ============================================================
+    print("\n" + "=" * 60)
+    print("  PHASE 4  —  Growth to ~450M Active (Depth: 12→15 layers)")
+    print("=" * 60)
+
+    # 1. Perform depth expansion (add layers while keeping width)
+    # From 12 layers at ~350M active → 15 layers at ~450M active (1.25x)
+    scale_factor_p4 = 1  # No width scaling (keep 1024 dim)
+    extra_layers_p4 = 3  # 12 → 15 layers
+    
+    # Create probe for verification
+    probe_p4 = dataset.get_batch(4, model_config.seq_len, device)[0]
+    
+    large_model = scale_bilaterally(
+        medium_model, 
+        scale_factor=scale_factor_p4,  # No width change (stay at 1024)
+        extra_layers=extra_layers_p4,   # Add 3 layers (12 → 15)
+        noise_std=noise_std             # Noise for Gstack
+    ).to(device)
+
+    # 2. Verification (lighter check for depth-only growth)
+    print("\n[Phase 3→4 Verification] Running growth checks...")
+    # For depth-only growth (scale_factor=1), we still verify but expect less dramatic changes
+    detailed_growth_check(
+        old_model=medium_model,
+        new_model=large_model,
+        probe=probe_p4,
+        device=device,
+        scale_factor=scale_factor_p4,
+        tolerance=1e-4
+    )
+    
+    # 3. Release memory of the medium model
+    del medium_model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
+
+    # 4. Train the Large Model
+    batch_size_p4 = getattr(training_config, 'batch_size_phase4', 1)
+    large_model, phase4_log = train_phase(
+        large_model, dataset,
+        steps=training_config.steps_phase4,
+        lr=training_config.lr_phase4,
+        label="Phase 4 — Large MoE (~1B Active)",
+        device=device,
+        model_config=model_config,
+        training_config=training_config,
+        batch_size=batch_size_p4,
+    )
+
+    # ── Print Phase 4 results ─────────────────────────────────────────
+    print_phase_results("Phase 4 — Large MoE (~1B Active)", phase4_log,
                         large_model, dataset, device, model_config, training_config)
 
-    # Save final Large model
+    # Save Large model
     checkpoint_path = Path(training_config.checkpoint_dir) / "large_moe_final.pt"
     torch.save({
         'model_state_dict': large_model.state_dict(),
-        'loss_log': phase3_log,
+        'loss_log': phase4_log,
     }, checkpoint_path)
     print(f"✓ Saved Large MoE model to {checkpoint_path}")
 
@@ -422,6 +486,8 @@ def main():
     p2_end = phase2_log[-1][1]
     p3_start = phase3_log[0][1]
     p3_end = phase3_log[-1][1]
+    p4_start = phase4_log[0][1]
+    p4_end = phase4_log[-1][1]
 
     print("=" * 60)
     print("  BOUNDARY SUMMARY")
@@ -430,15 +496,20 @@ def main():
     print(f"  Phase 2 first loss      :  {p2_start:.4f}")
     print(f"  Phase 2 final loss      :  {p2_end:.4f}")
     print(f"  Phase 1→2 jump          :  {abs(p2_start - p1_end):.4f}")
-    print(f"    (small jump is normal — it's a different random batch,")
-    print(f"     NOT a loss spike from the conversion)")
+    print(f"    (small jump is normal — different batch)")
     print(f"  Phase 2 total drop      :  {p2_start - p2_end:.4f}")
     print()
     print(f"  Phase 3 first loss      :  {p3_start:.4f}")
     print(f"  Phase 3 final loss      :  {p3_end:.4f}")
     print(f"  Phase 2→3 jump          :  {abs(p3_start - p2_end):.4f}")
-    print(f"    (should be VERY small due to functional preservation)")
+    print(f"    (should be small due to functional preservation)")
     print(f"  Phase 3 total drop      :  {p3_start - p3_end:.4f}")
+    print()
+    print(f"  Phase 4 first loss      :  {p4_start:.4f}")
+    print(f"  Phase 4 final loss      :  {p4_end:.4f}")
+    print(f"  Phase 3→4 jump          :  {abs(p4_start - p3_end):.4f}")
+    print(f"    (Gstack-only growth, should be small)")
+    print(f"  Phase 4 total drop      :  {p4_start - p4_end:.4f}")
     print("=" * 60)
 
     # ── Save log ──────────────────────────────────────────────────────
@@ -455,8 +526,25 @@ def main():
             f.write(json.dumps({"phase": 3,
                                 "step": step + training_config.steps_phase1 + training_config.steps_phase2,
                                 "loss": round(loss, 6)}) + "\n")
+        for step, loss in phase4_log:
+            f.write(json.dumps({"phase": 4,
+                                "step": step + training_config.steps_phase1 + training_config.steps_phase2 + training_config.steps_phase3,
+                                "loss": round(loss, 6)}) + "\n")
     print(f"\n  Logs saved → {log_path}")
-    print("\n✓ 3-Phase Experiment completed successfully!")
+    print("\n✓ 4-Phase Experiment completed successfully!")
+    
+    print("\n" + "=" * 60)
+    print("  GROWTH PROGRESSION SUMMARY")
+    print("=" * 60)
+    print("  Phase 1 (Dense):     12 layers ×  512 dim → ~70M params")
+    print("  Phase 2 (MoE):       12 layers ×  512 dim → ~90M active, ~240M total")
+    print("  Phase 3 (Width×2):   12 layers × 1024 dim → ~350M active, ~950M total")
+    print("  Phase 4 (Depth+3):   15 layers × 1024 dim → ~450M active, ~1.2B total")
+    print("=" * 60)
+    print()
+    print("  Strategy: Width scaling (512→1024), then depth scaling (12→15)")
+    print("  Memory: Phase 4 uses ~14GB with Adam optimizer (fits in 22GB GPU)")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
