@@ -1,0 +1,1615 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <title>Maxwell's Demon | Adaptive Dashboard</title>
+
+    <!-- Modern Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+    <style>
+        :root {
+            /* DARK THEME (DEFAULT) */
+            --bg-app: #050505;
+            --bg-panel: #0a0a0a;
+            --bg-panel-hover: #111111;
+
+            --border: #191919;
+            --border-highlight: #3f3f46;
+
+            --text-main: #e4e4e7;
+            --text-muted: #71717a;
+            --text-dim: #3f3f46;
+            --text-inv: #000000;
+
+            /* Accents */
+            --accent-primary: #3b82f6;
+            --accent-success: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-danger: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+
+            /* Chart Overrides */
+            --chart-bg: rgba(0, 0, 0, 0);
+            --chart-grid: #18181b;
+            --btn-active-bg: rgba(59, 130, 246, 0.15);
+            --btn-hover: #171717;
+            --live-shadow: rgba(16, 185, 129, 0.4);
+        }
+
+        [data-theme="light"] {
+            /* LIGHT THEME */
+            --bg-app: #f4f4f5;
+            /* Zinc 100 */
+            --bg-panel: #ffffff;
+            --bg-panel-hover: #fafafa;
+
+            --border: #e4e4e7;
+            /* Zinc 200 */
+            --border-highlight: #d4d4d8;
+
+            --text-main: #0f172a;
+            /* Slate 900 */
+            --text-muted: #64748b;
+            /* Slate 500 */
+            --text-dim: #cbd5e1;
+            --text-inv: #ffffff;
+
+            /* Slightly darker accents for white bg readability */
+            --accent-primary: #2563eb;
+            --accent-success: #059669;
+            --accent-warning: #d97706;
+            --accent-danger: #dc2626;
+            --accent-purple: #7c3aed;
+            --accent-cyan: #0891b2;
+
+            /* Chart Overrides */
+            --chart-bg: rgba(255, 255, 255, 0);
+            --chart-grid: #f0f0f0;
+            --btn-active-bg: rgba(37, 99, 235, 0.1);
+            --btn-hover: #f3f4f6;
+            --live-shadow: rgba(5, 150, 105, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            background: var(--bg-app);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* --- Layout --- */
+        .app-shell {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100%;
+            padding: 12px;
+            gap: 12px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 4px;
+        }
+
+        h1 {
+            font-family: 'Inter', -apple-system, sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .live-indicator {
+            height: 8px;
+            width: 8px;
+            background-color: var(--accent-success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--live-shadow);
+            animation: pulse 2s infinite;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 12px;
+            min-height: 0;
+            /* Important for scrolling */
+        }
+
+        .charts-col {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .sidebar-col {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+            overflow-y: auto;
+        }
+
+        /* --- Components --- */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            transition: border-color 0.2s, background 0.3s;
+            box-shadow:
+                0 1px 1px rgba(0, 0, 0, 0.04),
+                0 2px 6px rgba(0, 0, 0, 0.06);
+
+
+        }
+
+        .panel:hover {
+            border-color: var(--border-highlight);
+        }
+
+        .panel-header {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        /* --- Controls --- */
+        .controls-wrapper {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .btn-pill {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', -apple-system, sans-serif;
+            font-weight: 500;
+        }
+
+        .btn-pill:hover {
+            background: var(--btn-hover);
+            color: var(--text-main);
+        }
+
+        .btn-pill.active {
+            background: var(--btn-active-bg);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+
+        .source-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .source-toggle:hover {
+            background: var(--btn-hover);
+        }
+
+        .source-toggle.active {
+            background: var(--bg-panel);
+            border-color: var(--text-muted);
+            color: var(--text-main);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        /* Theme Toggle Button */
+        .theme-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .theme-btn:hover {
+            background: var(--btn-hover);
+            color: var(--text-main);
+        }
+
+        /* --- Plots --- */
+        .plot-container {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            overflow: visible !important;
+        }
+
+        /* Glassmorphism for Plotly hover labels */
+        .js-plotly-plot .hoverlayer .hovertext rect {
+            fill-opacity: 0.99 !important;
+            backdrop-filter: blur(60px);
+            -webkit-backdrop-filter: blur(60px);
+        }
+
+        .js-plotly-plot .hoverlayer .hovertext text {
+            font-weight: 500 !important;
+        }
+
+        /* Grid Layouts for Plots */
+        .bento-grid {
+            display: grid;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .bento-4 {
+            grid-template-columns: repeat(4, 1fr);
+            height: 240px;
+        }
+
+        .bento-2 {
+            grid-template-columns: repeat(2, 1fr);
+            height: 240px;
+        }
+
+        /* --- Data Terminal Tables --- */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Inter', -apple-system, sans-serif;
+            font-size: 11px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 8px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table th {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .data-table td.num {
+            text-align: right;
+        }
+
+        /* --- HUD Stats --- */
+        .hud-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding: 8px;
+        }
+
+        .hud-item {
+            background: var(--bg-app);
+            /* Subtle contrast in panel */
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .hud-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .hud-value {
+            font-family: 'Inter', -apple-system, sans-serif;
+            font-size: 18px;
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        /* --- Generations Log --- */
+        .console {
+            background: var(--bg-app);
+            /* Darker/Lighter than panel */
+            padding: 0;
+            overflow-y: auto;
+            flex: 1;
+            font-family: 'Inter', -apple-system, sans-serif;
+            border-top: 1px solid var(--border);
+        }
+
+        .console-entry {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .console-header {
+            padding: 8px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+            transition: background 0.2s;
+        }
+
+        .console-header:hover {
+            background: var(--bg-panel-hover);
+            color: var(--text-main);
+        }
+
+        .console-header.active {
+            background: var(--bg-panel-hover);
+            border-left: 2px solid var(--accent-primary);
+        }
+
+        .console-body {
+            display: none;
+            padding: 12px;
+            background: var(--bg-app);
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+        }
+
+        .console-body.open {
+            display: block;
+        }
+
+        .p-label {
+            color: var(--accent-primary);
+            font-size: 9px;
+            margin-bottom: 2px;
+            display: block;
+            font-weight: 700;
+        }
+
+        .o-label {
+            color: var(--accent-success);
+            font-size: 9px;
+            margin-top: 8px;
+            margin-bottom: 2px;
+            display: block;
+            font-weight: 700;
+        }
+
+        /* --- Scrollbars --- */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-highlight);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* --- EMA Toggle Buttons --- */
+        .ema-btn-group {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+
+        .ema-btn {
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-app);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .ema-btn:hover {
+            background: var(--bg-panel-hover);
+            color: var(--text-main);
+        }
+
+        .ema-btn.active {
+            background: var(--accent-primary);
+            color: #fff;
+            border-color: var(--accent-primary);
+        }
+
+        /* --- Animations --- */
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+                box-shadow: 0 0 0 0 var(--live-shadow);
+            }
+
+            70% {
+                opacity: 0.7;
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        /* --- MOBILE RESPONSIVE --- */
+        @media (max-width: 900px) {
+
+            html,
+            body {
+                height: auto;
+                overflow-x: hidden;
+                overflow-y: auto;
+            }
+
+            .app-shell {
+                display: flex;
+                flex-direction: column;
+                padding: 10px;
+                gap: 16px;
+                height: auto;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 4px;
+            }
+
+            .controls-wrapper {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .main-grid {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .charts-col,
+            .sidebar-col {
+                overflow: visible;
+                height: auto;
+            }
+
+            /* FORCE 1 CARD PER ROW */
+            .bento-4,
+            .bento-2 {
+                grid-template-columns: 1fr !important;
+                /* Single column */
+                height: auto;
+            }
+
+            .panel {
+                min-height: 300px;
+                /* Give charts vertical breathing room on mobile */
+            }
+
+            /* Specific heights for small charts to look good when stacked */
+            .bento-4 .panel,
+            .bento-2 .panel {
+                height: 250px;
+            }
+
+            #sourceToggles {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app-shell">
+        <header>
+            <h1>
+                <div class="live-indicator"></div>
+                MAXWELL'S DEMON
+            </h1>
+
+            <div class="controls-wrapper">
+                <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+                    <div class="control-group" id="sourceToggles"></div>
+                    <div class="control-group" style="padding-left: 12px; border-left: 1px solid var(--border);">
+                        <button class="btn-pill active" id="filterBtnAll" onclick="setStepFilter('ALL')">All</button>
+                        <button class="btn-pill" id="filterBtn1200" onclick="setStepFilter('1200+')">1200+</button>
+                        <button class="btn-pill" id="filterBtn250" onclick="setStepFilter('L250')">L250</button>
+                    </div>
+                    <div style="width:1px; height:16px; background:var(--border); margin:0 4px;"></div>
+                    <div class="control-group" style="padding-left: 12px; border-left: 1px solid var(--border);">
+                        <button class="btn-pill active" onclick="setEma(1)">Raw</button>
+                        <button class="btn-pill" onclick="setEma(10)">10</button>
+                        <button class="btn-pill" onclick="setEma(50)">50</button>
+                    </div>
+                </div>
+
+                <!-- Theme Toggle -->
+                <button class="theme-btn" onclick="toggleTheme()" title="Toggle Theme">
+                    <!-- Moon is now visible by default -->
+                    <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <!-- Sun is now hidden by default -->
+                    <svg id="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- LEFT: VISUALIZATION -->
+            <div class="charts-col">
+                <!-- 1. Main Loss Plot -->
+                <div class="panel" style="flex: 0 0 480px;">
+                    <div class="panel-header">
+                        <span class="panel-title">Training Loss Landscape</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="display:flex; gap:2px;">
+                                <button class="btn-pill" onclick="shiftGraph(-1)" title="Shift Left (-1s)"
+                                    style="padding:2px 8px;">&lt;</button>
+                                <button class="btn-pill" onclick="shiftGraph(1)" title="Shift Right (+1s)"
+                                    style="padding:2px 8px;">&gt;</button>
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);" id="step-indicator">WAITING...</div>
+                        </div>
+                    </div>
+                    <div class="plot-container" id="mainPlot"></div>
+                </div>
+
+                <!-- 2. Bento Grid 1 (Market Dynamics) -->
+                <div class="bento-grid bento-4">
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">λₚ (Compute Price)</span>
+                        </div>
+                        <div class="plot-container" id="lambdaPlot"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Avg Depth (Policy vs Target)</span>
+                        </div>
+                        <div class="plot-container" id="recurrencePlot"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Gate Health (p_k)</span>
+                        </div>
+                        <div class="plot-container" id="gatePlot"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Controller Error</span>
+                        </div>
+                        <div class="plot-container" id="ctrlErrPlot"></div>
+                    </div>
+                </div>
+
+                <!-- 3. Bento Grid 2 (System Health) -->
+                <div class="bento-grid bento-4">
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Entropy (Policy vs Audit)</span>
+                        </div>
+                        <div class="plot-container" id="recValuePlot"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px; display: flex; align-items: center;">
+                            <span class="panel-title">Ponder vs Coupon</span>
+                            <div class="ema-btn-group">
+                                <button class="ema-btn active" data-ema="100" onclick="setEmaWindow(100)">100</button>
+                                <button class="ema-btn" data-ema="250" onclick="setEmaWindow(250)">250</button>
+                                <button class="ema-btn" data-ema="500" onclick="setEmaWindow(500)">500</button>
+                            </div>
+                        </div>
+                        <div class="plot-container" id="ponderCouponPlot"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Recurrence Map</span>
+                        </div>
+                        <div class="plot-container" id="kHeatmap"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header" style="padding: 6px 10px;">
+                            <span class="panel-title">Grad Norm</span>
+                        </div>
+                        <div class="plot-container" id="gradPlot"></div>
+                    </div>
+                </div>
+
+                <!-- 4. Deep Analysis (Removed for now, merged above) -->
+                <!-- <div class="bento-grid bento-2">...</div> -->
+
+                <div style="height: 20px;"></div>
+            </div>
+
+            <!-- RIGHT: METRICS & LOGS -->
+            <div class="sidebar-col">
+
+                <!-- A. HUD Metrics -->
+                <div class="panel">
+                    <div class="panel-header"><span class="panel-title">Adaptive Metrics</span></div>
+                    <div class="hud-grid">
+                        <div class="hud-item">
+                            <span class="hud-label">Avg Depth (k)</span>
+                            <span class="hud-value" id="avgK" style="color: var(--accent-cyan)">--</span>
+                        </div>
+                        <div class="hud-item">
+                            <span class="hud-label">Ponder Loss</span>
+                            <span class="hud-value" id="pLoss" style="color: var(--accent-warning)">--</span>
+                        </div>
+                        <div class="hud-item">
+                            <span class="hud-label">Baton Ratio</span>
+                            <span class="hud-value" id="batonVal" style="color: var(--accent-danger)">--</span>
+                        </div>
+                        <div class="hud-item">
+                            <span class="hud-label">Price (λₚ)</span>
+                            <span class="hud-value" id="lambdaVal" style="color: var(--accent-purple)">--</span>
+                        </div>
+                        <div class="hud-item">
+                            <span class="hud-label">Coupon</span>
+                            <span class="hud-value" id="ponderCoupon" style="color: var(--accent-success)">--</span>
+                        </div>
+                        <div class="hud-item">
+                            <span class="hud-label">Grad Norm</span>
+                            <span class="hud-value" id="gradVal" style="color: var(--accent-success)">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- B. Snapshot Table -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Loss Snapshot</span>
+                        <span style="font-size: 10px; color: var(--text-muted)">Step <span
+                                id="currentStep">0</span></span>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th class="num">Loss</th>
+                            </tr>
+                        </thead>
+                        <tbody id="snapshotBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- C. Generations Feed -->
+                <div class="panel" style="flex: 1; min-height: 300px; display: flex; flex-direction: column;">
+                    <div class="panel-header"><span class="panel-title">Inference Stream</span></div>
+                    <div class="console" id="samplesList">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 11px;">
+                            Awaiting Generation Data...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --------------------------------------------------------
+        // THEME MANAGER
+        // --------------------------------------------------------
+        let isDark = false;
+
+        function toggleTheme() {
+            isDark = !isDark;
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            document.getElementById('sun-icon').style.display = isDark ? 'block' : 'none';
+            document.getElementById('moon-icon').style.display = isDark ? 'none' : 'block';
+            renderPlots(); // Re-draw plots to pick up new variable colors
+        }
+
+        // Helper to get computed styles for Plotly
+        function getThemeColors() {
+            const style = getComputedStyle(document.body);
+            return {
+                bg: style.getPropertyValue('--chart-bg').trim(),
+                grid: style.getPropertyValue('--chart-grid').trim(),
+                text: style.getPropertyValue('--text-muted').trim(),
+                textMain: style.getPropertyValue('--text-main').trim(),
+
+                // Accents
+                cyan: style.getPropertyValue('--accent-cyan').trim(),
+                blue: style.getPropertyValue('--accent-primary').trim(),
+                purple: style.getPropertyValue('--accent-purple').trim(),
+                orange: style.getPropertyValue('--accent-warning').trim(),
+                red: style.getPropertyValue('--accent-danger').trim(),
+                green: style.getPropertyValue('--accent-success').trim(),
+            };
+        }
+
+        // --------------------------------------------------------
+        // DATA CONFIG
+        // --------------------------------------------------------
+        const LOG_FILES = [
+            { name: "Live Run", url: "log_fourier_adaptive_10kRun_5kchange.txt", isLive: true, color: "#3b82f6", isAdaptive: true }, // Changed to Blue for cleaner look
+            // { name: "Live Run", url: "log_kronecker_adaptive.txt", isLive: true, color: "#3b82f6", isAdaptive: true }, // Changed to Blue for cleaner look
+            // { name: "Baseline", url: "baseline_smollm_logs_new_data.txt", isLive: false, color: "#71717a", isAdaptive: false },
+            // { name: "FFourier", url: "fourier_smollm_logs.txt", isLive: false, color: "#10b981", isAdaptive: false },
+            // { name: "AdapV0", url: "log_fourier_adaptive_v0.txt", isLive: false, color: "#ef4444", isAdaptive: false },
+            // { name: "AdapV1", url: "log_fourier_adaptive_v1.txt", isLive: false, color: "#9b59b6", isAdaptive: false },
+            // { name: "AdapV2", url: "log_fourier_adaptive_v2.txt", isLive: false, color: "#71717a", isAdaptive: false },
+        ];
+
+        let seriesData = {};
+        let adaptiveState = {
+            steps: [], heatmapK: [], heatmapExec: [], ponder: [],
+            gateSteps: [],
+            gateStats: Array(8).fill().map(() => ({ mu: [] })),
+            baton: [], grad: [], lr: [],
+            delta: Array(8).fill().map(() => []),
+            hDiff: Array(8).fill().map(() => []),
+            pDiff: Array(8).fill().map(() => []),
+            tailFrac: Array(8).fill().map(() => []),
+            dH: [], dCE: [],
+            // NEW: v2 Dashboard Metrics
+            lambda_p: [],           // Compute price time series
+            ctrl_err: [],           // Controller error (avg_k - TARGET_K)
+            p_near: [],             // Absorbing-state proximity
+            audit_flags: [],        // Track which steps are audit
+            dCE_policy: [],         // Delta CE for policy steps only
+            dCE_audit: [],          // Delta CE for audit steps only
+            coupon_history: [],     // Coupon credits time series
+        };
+        let generationGroups = [];
+        let visibleTraces = new Set([LOG_FILES[0].url]);
+        let emaWindow = 1;
+
+        // Deadband status from stats.json
+        let deadbandState = { active: false, stepsSinceTrigger: 0, frozenPrice: 0 };
+
+        // --------------------------------------------------------
+        // PARSERS (Robust)
+        // --------------------------------------------------------
+        const RE_ADAPTIVE_STEP = /STEP:\s*(\d+)\s*(\[AUDIT\])?\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*([\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+).*?\|\s*λ_p:\s*([\d\.e\-\+]+)(?:\[DB\])?\s*\|\s*CTRL_ERR:\s*([\d\.\+\-]+)\s*\|\s*P_NR:\s*([\d\.]+)%/;
+        const RE_ADAPTIVE_STEP_OLD = /STEP:\s*(\d+)\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*([\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+)/;
+        const RE_BATON = /BATON:\s*([\d\.]+)/;
+        const RE_LAYER = /L(\d+):\s*k_exec=(\d+),\s*expected_k=([\d\.]+).*?p_mu=([\d\.]+).*?d_rel=([\d\.]+).*?(?:Δh|h_dif)=([\d\.\-]+).*?(?:Δp|p_dif)=([\d\.\-]+)/u;
+        const RE_TAIL = /tail:\s*≥2:(\d+)%.*?≥3:(\d+)%.*?≥4:(\d+)%/;
+        const RE_REC_QUALITY = /RECURRENCE QUALITY:\s*ΔCE=([\d\.\-]+)\s*\|\s*ΔH=([\d\.\-]+)\s*\|\s*COUPON:\s*([\d\.\-]+)/;
+        const RE_GEN_HEADER = /={10,}\s*GENERATION STEP\s*(\d+)\s*={10,}/;
+        const RE_GEN_SEPARATOR = /={60,}/;
+
+        // --------------------------------------------------------
+        // CORE
+        // --------------------------------------------------------
+        async function init() {
+            renderLegend();
+            await fetchAll();
+            setInterval(fetchAll, 3000);
+        }
+
+        async function fetchAll() {
+            for (const file of LOG_FILES) {
+                try {
+                    const res = await fetch(file.url + '?t=' + Date.now());
+                    if (!res.ok) continue;
+                    const text = await res.text();
+                    parseLog(text, file);
+                    if (file.isLive) parseGenerations(text);
+                } catch (e) { console.error(e); }
+            }
+            // Fetch stats.json for deadband info
+            try {
+                const statsRes = await fetch('stats.json?t=' + Date.now());
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    deadbandState.active = stats.deadband_active || false;
+                    deadbandState.stepsSinceTrigger = stats.deadband_steps_since_trigger || 0;
+                    // Get actual frozen price from layer 0's lam_mu
+                    if (stats.layers && stats.layers[0] && stats.layers[0].lam_mu !== undefined) {
+                        deadbandState.frozenPrice = stats.layers[0].lam_mu;
+                    }
+                }
+            } catch (e) { /* stats.json may not exist */ }
+            try {
+                renderPlots();
+                updateSnapshot();
+                updateSamplesList();
+            } catch (e) { console.error("Render Error:", e); }
+        }
+
+        let globalStepShift = 0;
+        let currentStepFilter = 'ALL';
+
+        function setStepFilter(mode) {
+            currentStepFilter = mode;
+            // Update UI
+            document.getElementById('filterBtnAll').classList.toggle('active', mode === 'ALL');
+            document.getElementById('filterBtn1200').classList.toggle('active', mode === '1200+');
+            document.getElementById('filterBtn250').classList.toggle('active', mode === 'L250');
+            renderPlots();
+        }
+
+        function getSliceStart(steps) {
+            if (!steps || !steps.length) return 0;
+            if (currentStepFilter === 'ALL') return 0;
+            if (currentStepFilter === 'L250') return Math.max(0, steps.length - 250);
+            if (currentStepFilter === '1200+') {
+                const idx = steps.findIndex(s => s >= 1200);
+                return idx === -1 ? 0 : idx;
+            }
+            return 0;
+        }
+
+        function shiftGraph(delta) {
+            globalStepShift += delta;
+            renderPlots();
+        }
+
+        function calculateEMA(data, window) {
+            if (!data || data.length === 0) return [];
+            if (window === 1) return data;
+            const alpha = 2 / (window + 1);
+            let ema = [data[0]];
+            for (let i = 1; i < data.length; i++) {
+                ema.push(alpha * data[i] + (1 - alpha) * ema[i - 1]);
+            }
+            return ema;
+        }
+
+        function setEma(val) {
+            emaWindow = val;
+            document.querySelectorAll('.btn-pill').forEach(b => {
+                if (b.id && b.id.startsWith('filterBtn')) return; // Skip filter buttons
+                b.classList.toggle('active', (b.innerText === 'Raw' && val === 1) || parseInt(b.innerText) === val);
+            });
+            Object.values(seriesData).forEach(d => {
+                if (d.rawY) d.y = calculateEMA(d.rawY, emaWindow);
+            });
+            renderPlots();
+            updateSnapshot();
+        }
+
+        // --------------------------------------------------------
+        // DATA PARSING
+        // --------------------------------------------------------
+        function parseLog(text, file) {
+            const lines = text.split('\n');
+            const x = [], y = [];
+
+            if (file.isAdaptive && file.isLive) {
+                adaptiveState = {
+                    steps: [], gateSteps: [], heatmapK: [], heatmapExec: [], ponder: [],
+                    gateStats: Array(8).fill().map(() => ({ mu: [] })),
+                    baton: [], grad: [], lr: [], delta: Array(8).fill().map(() => []),
+                    hDiff: Array(8).fill().map(() => []),
+                    pDiff: Array(8).fill().map(() => []),
+                    tailFrac: Array(8).fill().map(() => []),
+                    dH: [], dCE: [],
+                    // NEW: v2 Dashboard Metrics
+                    lambda_p: [],
+                    ctrl_err: [],
+                    p_near: [],
+                    audit_flags: [],
+                    dCE_policy: [],
+                    dCE_audit: [],
+                    coupon_history: [],
+                };
+
+                let currentK = Array(8).fill(0);
+                let currentExec = Array(8).fill(1);
+                let lastIsAudit = false; // Track audit status for dCE routing
+
+                lines.forEach(line => {
+                    // Try new format first, fallback to old
+                    let stepMatch = RE_ADAPTIVE_STEP.exec(line);
+                    let isNewFormat = !!stepMatch;
+                    if (!stepMatch) {
+                        stepMatch = RE_ADAPTIVE_STEP_OLD.exec(line);
+                    }
+
+                    if (stepMatch) {
+                        if (isNewFormat) {
+                            // New format: [1]=step, [2]=audit_flag, [3]=tot, [4]=lm, [5]=ponder, [6]=lr, [7]=grad, [8]=lambda_p, [9]=err, [10]=p_nr
+                            const step = parseInt(stepMatch[1]);
+                            const isAudit = !!stepMatch[2];
+                            const tot = parseFloat(stepMatch[3]);
+                            x.push(step); y.push(tot);
+
+                            adaptiveState.steps.push(step);
+                            adaptiveState.audit_flags.push(isAudit);
+                            adaptiveState.ponder.push(parseFloat(stepMatch[5]));
+                            adaptiveState.lr.push(parseFloat(stepMatch[6]));
+                            adaptiveState.grad.push(parseFloat(stepMatch[7]));
+                            let lambdaParsed = parseFloat(stepMatch[8]);
+                            // During deadband, log shows 0 (no change), use frozen price for flat line
+                            if (lambdaParsed === 0 && deadbandState.active && deadbandState.frozenPrice > 0) {
+                                lambdaParsed = deadbandState.frozenPrice;
+                            }
+                            adaptiveState.lambda_p.push(lambdaParsed);
+                            adaptiveState.ctrl_err.push(parseFloat(stepMatch[9]));
+                            adaptiveState.p_near.push(parseFloat(stepMatch[10]));
+
+                            lastIsAudit = isAudit;
+                        } else {
+                            // Old format: [1]=step, [2]=tot, [3]=lm, [4]=ponder, [5]=lr, [6]=grad
+                            const step = parseInt(stepMatch[1]);
+                            const tot = parseFloat(stepMatch[2]);
+                            x.push(step); y.push(tot);
+
+                            adaptiveState.steps.push(step);
+                            adaptiveState.audit_flags.push(false);
+                            adaptiveState.ponder.push(parseFloat(stepMatch[4]));
+                            adaptiveState.lr.push(parseFloat(stepMatch[5]));
+                            adaptiveState.grad.push(parseFloat(stepMatch[6]));
+                            // No new metrics in old format
+                            adaptiveState.lambda_p.push(0);
+                            adaptiveState.ctrl_err.push(0);
+                            adaptiveState.p_near.push(0);
+
+                            lastIsAudit = false;
+                        }
+
+                        const batonMatch = RE_BATON.exec(line);
+                        adaptiveState.baton.push(batonMatch ? parseFloat(batonMatch[1]) : 0);
+                        adaptiveState.heatmapK.push([...currentK]);
+                        adaptiveState.heatmapExec.push([...currentExec]);
+                    }
+
+                    const lm_match = RE_LAYER.exec(line);
+                    if (lm_match) {
+                        const l_idx = parseInt(lm_match[1]);
+                        if (l_idx === 0) {
+                            const lastStep = adaptiveState.steps[adaptiveState.steps.length - 1];
+                            adaptiveState.gateSteps.push(lastStep);
+                        }
+
+                        if (l_idx < 8) {
+                            currentExec[l_idx] = parseInt(lm_match[2]);
+                            currentK[l_idx] = parseFloat(lm_match[3]);
+                            adaptiveState.gateStats[l_idx].mu.push(parseFloat(lm_match[4]));
+                            adaptiveState.delta[l_idx].push(parseFloat(lm_match[5]));
+                            adaptiveState.hDiff[l_idx].push(parseFloat(lm_match[6]));
+                            adaptiveState.pDiff[l_idx].push(parseFloat(lm_match[7]));
+
+                            const tail_match = RE_TAIL.exec(line);
+                            if (tail_match && adaptiveState.tailFrac[l_idx]) {
+                                adaptiveState.tailFrac[l_idx].push(parseInt(tail_match[1]));
+                            }
+                        }
+                    }
+
+                    const rec_match = RE_REC_QUALITY.exec(line);
+                    if (rec_match) {
+                        const recStep = adaptiveState.steps[adaptiveState.steps.length - 1] || 0;
+                        const dCE_val = parseFloat(rec_match[1]);
+                        const coupon_val = parseFloat(rec_match[3]);
+                        adaptiveState.dCE.push({ step: recStep, value: dCE_val });
+                        adaptiveState.dH.push({ step: recStep, value: parseFloat(rec_match[2]) });
+                        adaptiveState.last_coupon = coupon_val;
+                        adaptiveState.coupon_history.push({ step: recStep, value: coupon_val });
+
+                        // Route dCE to policy vs audit based on last step's audit flag
+                        if (lastIsAudit) {
+                            adaptiveState.dCE_audit.push({ step: recStep, value: dCE_val });
+                        } else {
+                            adaptiveState.dCE_policy.push({ step: recStep, value: dCE_val });
+                        }
+                    }
+                });
+            } else {
+                // Modified regex to handle optional timestamp at start
+                // e.g. "2026-01-02 06:37:13,873 | step 1 | loss: 10.9762..."
+                const RE_STEP_LOSS = /(?:^|\s)step\s*(\d+)\s*\|\s*loss:\s*([\d\.]+)/i;
+                const RE_STEP_TOT = /(?:^|\s)STEP:\s*(\d+)\s*\|\s*(?:TOT|LOSS):\s*([\d\.]+)/i;
+
+                lines.forEach(line => {
+                    let m = RE_STEP_LOSS.exec(line) || RE_STEP_TOT.exec(line);
+                    if (m) {
+                        x.push(parseInt(m[1]));
+                        y.push(parseFloat(m[2]));
+                    }
+                });
+            }
+
+            const ySmoothed = calculateEMA(y, emaWindow);
+            seriesData[file.url] = { x, y: ySmoothed, rawY: y, lastStep: x[x.length - 1] };
+        }
+
+        // --------------------------------------------------------
+        // EMA (Exponential Moving Average) for Ponder vs Coupon chart
+        // --------------------------------------------------------
+        window.emaWindow = 100; // Default EMA window
+
+        function computeEMA(data, windowSize) {
+            if (!data || data.length === 0) return [];
+            const alpha = 2 / (windowSize + 1);
+            const ema = new Array(data.length);
+            ema[0] = data[0];
+            for (let i = 1; i < data.length; i++) {
+                ema[i] = alpha * data[i] + (1 - alpha) * ema[i - 1];
+            }
+            return ema;
+        }
+
+        function setEmaWindow(size) {
+            window.emaWindow = size;
+            // Update button states
+            document.querySelectorAll('.ema-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.ema) === size);
+            });
+            // Trigger a redraw (the next poll will update, or we force refresh)
+            if (typeof renderAll === 'function') {
+                renderAll();
+            }
+        }
+
+        // --------------------------------------------------------
+        // RENDER
+        // --------------------------------------------------------
+        function safeReact(id, traces, layout, config) {
+            const el = document.getElementById(id);
+            if (!el) {
+                console.warn(`Plotly container #${id} not found, skipping.`);
+                return;
+            }
+            try {
+                // PRESERVE USER ZOOM: If plot already exists and user has zoomed, keep their range
+                if (el._fullLayout && el._fullLayout.xaxis && el._fullLayout.yaxis) {
+                    const currentXRange = el._fullLayout.xaxis.range;
+                    const currentYRange = el._fullLayout.yaxis.range;
+                    // Check if user has interacted (autorange is false when user zooms)
+                    if (el._fullLayout.xaxis.autorange === false) {
+                        layout.xaxis.range = currentXRange;
+                        layout.xaxis.autorange = false;
+                    }
+                    if (el._fullLayout.yaxis.autorange === false) {
+                        layout.yaxis.range = currentYRange;
+                        layout.yaxis.autorange = false;
+                    }
+                }
+                Plotly.react(el, traces, layout, config);
+            } catch (e) {
+                console.error(`Plotly error on #${id}:`, e);
+            }
+        }
+
+        function renderPlots() {
+            const T = getThemeColors();
+
+            const commonLayout = {
+                font: { family: 'Inter, sans-serif', color: T.text, size: 9 },
+                paper_bgcolor: T.bg,
+                plot_bgcolor: T.bg,
+                margin: { t: 8, r: 8, l: 20, b: 15 },
+                xaxis: { gridcolor: T.grid, zeroline: false, showline: false },
+                yaxis: { gridcolor: T.grid, zeroline: false, showline: false },
+                uirevision: 'true', // PRESERVES ZOOM
+                hovermode: 'x unified',
+                hoverlabel: {
+                    bgcolor: isDark ? 'rgba(10, 10, 10, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                    bordercolor: T.grid,
+                    font: { family: 'Inter, sans-serif', size: 9, color: T.textMain },
+                    align: 'left'
+                },
+                showlegend: false
+            };
+            const getLayout = () => JSON.parse(JSON.stringify(commonLayout));
+
+            // 1. MAIN LOSS
+            const mainTraces = [];
+
+            // CRITICAL: Calculate step range based on LIVE run first
+            const liveFile = LOG_FILES.find(f => f.isLive);
+            const liveData = liveFile ? seriesData[liveFile.url] : null;
+            let liveMinStep = 0;
+            let liveMaxStep = Infinity;
+
+            if (liveData && liveData.x.length > 0) {
+                const liveSteps = liveData.x;
+                const liveStartIdx = getSliceStart(liveSteps); // Uses currentStepFilter
+                liveMinStep = liveSteps[liveStartIdx] || 0;
+                liveMaxStep = liveSteps[liveSteps.length - 1] || Infinity;
+            }
+
+            LOG_FILES.forEach(f => {
+                if (!visibleTraces.has(f.url)) return;
+                const d = seriesData[f.url];
+                if (!d || !d.x.length) return;
+
+                let plotX, plotY;
+
+                if (f.isLive) {
+                    // LIVE run: use filter directly
+                    const startIdx = getSliceStart(d.x);
+                    plotX = d.x.slice(startIdx);
+                    plotY = d.y.slice(startIdx);
+                } else {
+                    // REFERENCE runs: show ALL their data (user can scroll to see beyond LIVE)
+                    // Only apply the START filter based on LIVE's min step
+                    const startIdx = d.x.findIndex(step => step >= liveMinStep);
+                    plotX = d.x.slice(startIdx === -1 ? 0 : startIdx);
+                    plotY = d.y.slice(startIdx === -1 ? 0 : startIdx);
+                }
+
+                if (plotX.length === 0) return;
+
+                // Override line color if it's white in dark mode but needs to be black in light mode
+                let lineColor = f.color;
+                if (f.isLive && isDark) lineColor = '#ffffff'; // White in dark
+                if (f.isLive && !isDark) lineColor = '#000000'; // Black in light
+
+                // Apply Shift Usefully
+                if (f.isLive && globalStepShift !== 0) {
+                    plotX = plotX.map(v => v + globalStepShift);
+                }
+
+                mainTraces.push({
+                    x: plotX, y: plotY, name: f.name, mode: 'lines',
+                    line: { color: lineColor, width: f.isLive ? 2 : 1.5, dash: f.isLive ? 'solid' : 'dot' },
+                    fill: f.isLive ? 'tozeroy' : 'none',
+                    fillcolor: f.isLive ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') : undefined
+                });
+            });
+            const mainL = getLayout();
+            mainL.margin.l = 40;
+
+            // CRITICAL: Lock x-axis to LIVE run's step range (user can still pan/zoom to see references)
+            if (liveData && liveData.x.length > 0) {
+                mainL.xaxis.range = [liveMinStep, liveMaxStep];
+            } else if (mainTraces.length === 0) {
+                mainL.xaxis.range = [0, 100]; mainL.yaxis.range = [0, 5];
+            }
+
+            // Minimal Zoom Buttons Configuration
+            const zoomConfig = {
+                displayModeBar: true,
+                displaylogo: false, // Hides the "Plotly" logo
+                modeBarButtons: [['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'resetScale2d']]
+            };
+
+            safeReact('mainPlot', mainTraces, mainL, zoomConfig);
+
+            // ADAPTIVE CHARTS
+            if (adaptiveState.steps.length > 0) {
+                // Slice adaptive state
+                const startIdx = getSliceStart(adaptiveState.steps);
+                const steps = adaptiveState.steps.slice(startIdx);
+
+                // Gate steps might have different indexing, but usually parallel
+                const gateStartIdx = getSliceStart(adaptiveState.gateSteps);
+                const gateSteps = adaptiveState.gateSteps.slice(gateStartIdx);
+
+                // 0. LAYER COLOR PALETTE (Distinct colors for L0-L7)
+                // Dark mode gets neons, Light mode gets deeper shades for contrast
+                const LAYER_COLORS = isDark
+                    ? ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#a1a1aa']
+                    : ['#1d4ed8', '#b91c1c', '#047857', '#b45309', '#6d28d9', '#0e7490', '#be185d', '#52525b'];
+
+                // A. AVG DEPTH vs TARGET (Line Chart)
+                // Show Average K (Policy - simplified to just total average for now) vs TARGET
+                // We need to slice heatmapK as well
+                const slicedK = adaptiveState.heatmapK.slice(startIdx);
+                const avgK = slicedK.map(row => row.reduce((a, b) => a + b, 0) / 8);
+                const recTraces = [
+                    { x: steps, y: avgK, name: 'Avg K', line: { color: T.cyan, width: 2 } },
+                ];
+                const recLayout = getLayout();
+                recLayout.shapes = [{
+                    type: 'line', x0: steps[0], x1: steps[steps.length - 1],
+                    y0: 2.4, y1: 2.4, // TARGET_K
+                    line: { color: T.green, width: 1, dash: 'dash' }
+                }];
+                safeReact('recurrencePlot', recTraces, recLayout, { displayModeBar: false });
+
+                // B. GATE HEALTH (Uses Layer Colors)
+                // Use gateFilteredSteps logic but respecting StepFilter instead of hardcoded 800 if possible
+                // Actually the user probably wants to see based on filter. 
+                // We keep filter logic from getSliceStart above (gateSteps)
+
+                const gateTraces = adaptiveState.gateStats.map((g, i) => ({
+                    x: gateSteps,
+                    y: g.mu.slice(gateStartIdx),
+                    name: `L${i}`,
+                    line: { width: 1.5, color: LAYER_COLORS[i] } // Slightly thicker for visibility
+                }));
+
+                // B. GATE HEALTH (Threshold Line & Auto-Scale)
+                const gateL = getLayout();
+                gateL.shapes = [
+                    {
+                        type: 'line', x0: gateSteps[0], x1: gateSteps[gateSteps.length - 1],
+                        y0: 0.01, y1: 0.01, // Clamp line
+                        line: { color: T.red, width: 1.5, dash: 'dot' }
+                    }
+                ];
+                safeReact('gatePlot', gateTraces, gateL, { displayModeBar: false });
+
+                // C. BATON & LR
+                const batonTrace = { x: steps, y: adaptiveState.baton.slice(startIdx), name: 'Baton', line: { color: T.red, width: 1.5 } };
+                const lrTrace = { x: steps, y: adaptiveState.lr.slice(startIdx), name: 'LR', yaxis: 'y2', line: { color: T.orange, width: 1, dash: 'dot' } };
+                const batonL = getLayout();
+                batonL.yaxis2 = { overlaying: 'y', side: 'right', showgrid: false, type: 'log', tickfont: { color: T.text } };
+                safeReact('batonPlot', [batonTrace, lrTrace], batonL, { displayModeBar: false });
+
+                // D. GRAD
+                const gradTrace = { x: steps, y: adaptiveState.grad.slice(startIdx), name: 'Grad', fill: 'tozeroy', line: { color: T.green, width: 1 }, fillcolor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(5, 150, 105, 0.1)' };
+                safeReact('gradPlot', [gradTrace], getLayout(), { displayModeBar: false });
+
+                // E. HEATMAP
+                // For heatmap, we usually show L250 anyway if not filtered, but let's respect filter
+                // If 'ALL' or '1200+', we might have too many points for efficient heatmap. 
+                // The old code did: const lastN = Math.max(0, steps.length - 200);
+                // The user explicitly asked for filters. 'ALL' implies everything.
+                // But let's check if the user *wants* simplified heatmap or full history.
+                // Assuming full history if requested, but heatmap performance might suffer.
+                // Let's stick strictly to what the filter implies.
+
+                const kZ = [];
+                for (let l = 0; l < 8; l++) kZ.push(adaptiveState.heatmapK.slice(startIdx).map(r => r[l]));
+
+                const heatTrace = {
+                    z: kZ, x: steps, y: ['L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7'],
+                    type: 'heatmap', colorscale: isDark ? 'Magma' : 'RdBu', showscale: false
+                };
+                const heatL = getLayout();
+                heatL.margin.b = 20;
+                safeReact('kHeatmap', [heatTrace], heatL, { displayModeBar: false });
+
+                // F. DELTA (Uses Layer Colors)
+                const deltaTraces = adaptiveState.delta.map((d, i) => ({
+                    x: gateSteps, y: d.slice(gateStartIdx), name: `L${i}`, line: { width: 1.2, opacity: 0.8, color: LAYER_COLORS[i] }
+                }));
+                safeReact('deltaPlot', deltaTraces, getLayout(), { displayModeBar: false });
+
+                // G. RECURRENCE EFFECT / Δh (Uses Layer Colors)
+                const hDiffTraces = adaptiveState.hDiff.map((h, i) => ({
+                    x: gateSteps, y: h.slice(gateStartIdx), name: `L${i}`, line: { width: 1.2, color: LAYER_COLORS[i] }
+                }));
+                safeReact('recEffectPlot', hDiffTraces, getLayout(), { displayModeBar: false });
+
+                // I. CONTROLLER ERROR
+                const errTrace = {
+                    x: steps, y: adaptiveState.ctrl_err.slice(startIdx), name: 'Err',
+                    type: 'scatter', mode: 'lines', line: { color: T.red, width: 1.5 },
+                    fill: 'tozeroy', fillcolor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(220, 38, 38, 0.1)'
+                };
+                safeReact('ctrlErrPlot', [errTrace], getLayout(), { displayModeBar: false });
+
+                // J. PONDER PENALTY vs COUPON CREDITS (Force Collision Chart) with EMA
+                const ponderTraces = [];
+                const ponderData = adaptiveState.ponder.slice(startIdx);
+                const ponderEMA = computeEMA(ponderData, window.emaWindow || 100);
+                // Ponder penalty trace (EMA smoothed)
+                ponderTraces.push({
+                    x: steps, y: ponderEMA, name: `Ponder (EMA ${window.emaWindow || 100})`,
+                    type: 'scatter', mode: 'lines', line: { color: T.red, width: 1.5 },
+                    fill: 'tozeroy', fillcolor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)'
+                });
+                // Coupon credits trace (EMA smoothed)
+                const couponStartStep = steps[0] || 0;
+                const couponFiltered = adaptiveState.coupon_history.filter(d => d.step >= couponStartStep);
+                if (couponFiltered.length > 0) {
+                    const couponValues = couponFiltered.map(d => d.value);
+                    const couponEMA = computeEMA(couponValues, window.emaWindow || 100);
+                    ponderTraces.push({
+                        x: couponFiltered.map(d => d.step), y: couponEMA,
+                        name: `Coupon (EMA ${window.emaWindow || 100})`, type: 'scatter', mode: 'lines',
+                        line: { color: T.green, width: 1.5 },
+                        fill: 'tozeroy', fillcolor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)'
+                    });
+                }
+                safeReact('ponderCouponPlot', ponderTraces, getLayout(), { displayModeBar: false });
+
+                // K. ENTROPY DYNAMICS (Policy vs Audit)
+                // Filter scatter points based on step range logic
+                // startStep is steps[0] (after slice)
+                const startStep = steps[0] || 0;
+
+                const filterScatter = (arr) => arr.filter(d => d.step >= startStep);
+
+                const polFiltered = filterScatter(adaptiveState.dCE_policy);
+                const audFiltered = filterScatter(adaptiveState.dCE_audit);
+
+                const entTraces = [];
+                if (polFiltered.length > 0) {
+                    entTraces.push({
+                        x: polFiltered.map(d => d.step), y: polFiltered.map(d => d.value),
+                        name: 'ΔCE (Policy)', mode: 'markers', marker: { color: T.blue, size: 3, opacity: 0.6 }
+                    });
+                }
+                if (audFiltered.length > 0) {
+                    entTraces.push({
+                        x: audFiltered.map(d => d.step), y: audFiltered.map(d => d.value),
+                        name: 'ΔCE (Audit)', mode: 'markers', marker: { color: T.orange, size: 5, symbol: 'x' }
+                    });
+                }
+                safeReact('recValuePlot', entTraces, getLayout(), { displayModeBar: false });
+
+                // L. LAMBDA PRICE
+                const lamTrace = {
+                    x: steps, y: adaptiveState.lambda_p.slice(startIdx), name: 'Price',
+                    type: 'scatter', mode: 'lines', line: { color: T.purple, width: 2 }
+                };
+                const lamLayout = getLayout();
+                lamLayout.yaxis = { ...lamLayout.yaxis, type: 'log' }; // Price varies by orders of magnitude typically
+                safeReact('lambdaPlot', [lamTrace], lamLayout, { displayModeBar: false });
+
+                // J. TAIL
+                if (adaptiveState.tailFrac[5]) {
+                    const tailTraces = [2, 4, 5].map(l => ({
+                        x: gateSteps, // Use gateSteps for correct mapping
+                        y: adaptiveState.tailFrac[l].slice(gateStartIdx), name: `L${l}≥2`, line: { width: 2 }
+                    }));
+                    safeReact('tailPlot', tailTraces, getLayout(), { displayModeBar: false });
+                }
+            }
+        }
+
+        // --------------------------------------------------------
+        // UI HELPERS
+        // --------------------------------------------------------
+        function updateSnapshot() {
+            if (adaptiveState.steps.length) {
+                const last = adaptiveState.steps.length - 1;
+                document.getElementById('currentStep').innerText = adaptiveState.steps[last];
+                document.getElementById('step-indicator').innerText = `LATEST STEP: ${adaptiveState.steps[last]}`;
+
+                const kVal = (adaptiveState.heatmapK[last].reduce((a, b) => a + b, 0) / 8).toFixed(2);
+                document.getElementById('avgK').innerText = kVal;
+                document.getElementById('pLoss').innerText = adaptiveState.ponder[last].toFixed(5);
+                document.getElementById('batonVal').innerText = adaptiveState.baton[last].toFixed(3);
+                document.getElementById('gradVal').innerText = adaptiveState.grad[last].toFixed(3);
+                // HUD: Lambda & Coupon - show frozen price from stats.json when deadband active
+                let lamVal = adaptiveState.lambda_p && adaptiveState.lambda_p[last] !== undefined ? adaptiveState.lambda_p[last] : 0.0;
+                // During deadband, log shows 0 (no change), so use actual frozen price from stats.json
+                if (deadbandState.active && deadbandState.frozenPrice > 0) {
+                    lamVal = deadbandState.frozenPrice;
+                }
+                const lamText = lamVal.toExponential(2);
+                const dbSuffix = deadbandState.active ? ` [DB +${deadbandState.stepsSinceTrigger}]` : '';
+                document.getElementById('lambdaVal').innerHTML = lamText + `<span style="color: var(--accent-purple); font-size: 12px;">${dbSuffix}</span>`;
+                document.getElementById('ponderCoupon').innerText = (adaptiveState.last_coupon || 0).toFixed(6);
+            }
+
+            const live = LOG_FILES.find(f => f.isLive);
+            const currentStep = seriesData[live.url]?.lastStep || 0;
+            let html = '';
+            LOG_FILES.forEach(f => {
+                if (!visibleTraces.has(f.url)) return;
+                const d = seriesData[f.url];
+                if (!d) return;
+
+                // Find index: exact match OR closest match
+                let idx = d.x.indexOf(currentStep);
+                if (idx === -1 && d.x.length > 0) {
+                    // Simple nearest search since x is sorted
+                    idx = 0;
+                    let minDiff = Math.abs(d.x[0] - currentStep);
+                    for (let i = 1; i < d.x.length; i++) {
+                        const diff = Math.abs(d.x[i] - currentStep);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            idx = i;
+                        }
+                    }
+                }
+
+                const val = idx !== -1 && d.y[idx] !== undefined ? d.y[idx].toFixed(4) : (d.y[d.y.length - 1]?.toFixed(4) || '--');
+
+                let dotColor = f.color;
+                if (f.isLive && isDark) dotColor = 'white';
+                if (f.isLive && !isDark) dotColor = 'black';
+
+                html += `<tr>
+                    <td style="color:${isDark ? f.color : '#333'}; font-weight:600;"><span class="dot" style="background:${dotColor}; display:inline-block; margin-right:6px;"></span>${f.name}</td>
+                    <td class="num" style="color:var(--text-main)">${val}</td>
+                </tr>`;
+            });
+            document.getElementById('snapshotBody').innerHTML = html;
+        }
+
+        function renderLegend() {
+            const container = document.getElementById('sourceToggles');
+            container.innerHTML = '';
+            LOG_FILES.forEach(f => {
+                const btn = document.createElement('button');
+                btn.className = `source-toggle ${visibleTraces.has(f.url) ? 'active' : ''}`;
+
+                let dotColor = f.color;
+                // Hardcode logic for dynamic theme colors on the "Live" pill
+                if (f.isLive) dotColor = 'currentColor';
+
+                btn.innerHTML = `<span class="dot" style="background:${dotColor}"></span>${f.name}`;
+                btn.onclick = () => {
+                    if (visibleTraces.has(f.url)) visibleTraces.delete(f.url);
+                    else visibleTraces.add(f.url);
+                    renderLegend(); renderPlots(); updateSnapshot();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function parseGenerations(text) {
+            const lines = text.split('\n');
+            const groups = [];
+            let currentGroup = null;
+            let currentSample = null;
+            let mode = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (RE_GEN_SEPARATOR.test(line)) {
+                    if (currentSample && currentGroup) { currentGroup.samples.push(currentSample); currentSample = null; }
+                    if (currentGroup) { groups.push(currentGroup); currentGroup = null; }
+                    mode = null; continue;
+                }
+                const headerMatch = RE_GEN_HEADER.exec(line);
+                if (headerMatch) {
+                    if (currentSample && currentGroup) { currentGroup.samples.push(currentSample); currentSample = null; }
+                    if (currentGroup) groups.push(currentGroup);
+                    currentGroup = { step: parseInt(headerMatch[1]), samples: [] };
+                    mode = null; continue;
+                }
+                if (line.includes('[GEN ')) {
+                    if (currentSample && currentGroup) currentGroup.samples.push(currentSample);
+                    currentSample = { prompt: "", output: "" };
+                    mode = null; continue;
+                }
+                if (line.includes("Prompt (")) { mode = 'prompt'; continue; }
+                if (line.includes("Output (")) { mode = 'output'; continue; }
+                const content = line.replace(/^\s{4}/, '');
+                if (mode === 'prompt' && currentSample) if (content.trim() !== "") currentSample.prompt += content + "\n";
+                if (mode === 'output' && currentSample) if (content.trim() !== "" && !RE_GEN_HEADER.test(line) && !line.includes('[GEN ')) currentSample.output += content + "\n";
+            }
+            if (currentSample && currentGroup) currentGroup.samples.push(currentSample);
+            if (currentGroup) groups.push(currentGroup);
+            generationGroups = groups.reverse();
+        }
+
+        function updateSamplesList() {
+            const container = document.getElementById('samplesList');
+            const recentGroups = generationGroups.slice(0, 4);
+            if (recentGroups.length === 0) return;
+
+            const firstStep = recentGroups[0]?.step;
+            const currentFirst = container.firstElementChild?.dataset.step;
+            if (firstStep && String(firstStep) === currentFirst) return;
+
+            container.innerHTML = '';
+
+            recentGroups.forEach((group, gIdx) => {
+                const stepBlock = document.createElement('div');
+                stepBlock.dataset.step = group.step;
+
+                group.samples.forEach((s, sIdx) => {
+                    const entry = document.createElement('div');
+                    entry.className = 'console-entry';
+
+                    const header = document.createElement('div');
+                    header.className = 'console-header';
+                    const pPreview = (s.prompt || '').slice(0, 40).replace(/\n/g, ' ') + '...';
+                    header.innerHTML = `<span><span style="color:var(--accent-primary)">STEP ${group.step}</span> <span style="color:var(--text-dim)">::</span> SAMPLE ${sIdx + 1}</span> <span>${pPreview}</span>`;
+
+                    const body = document.createElement('div');
+                    body.className = 'console-body';
+                    if (gIdx === 0 && sIdx === 0) {
+                        body.classList.add('open');
+                        header.classList.add('active');
+                    }
+
+                    body.innerHTML = `
+                        <span class="p-label">PROMPT &gt;&gt;</span>
+                        <div style="color:var(--text-main); margin-bottom:8px;">${s.prompt}</div>
+                        <span class="o-label">OUTPUT &gt;&gt;</span>
+                        <div style="color:var(--text-muted);">${s.output}</div>
+                    `;
+
+                    header.onclick = () => {
+                        const isOpen = body.classList.contains('open');
+                        container.querySelectorAll('.console-body').forEach(b => b.classList.remove('open'));
+                        container.querySelectorAll('.console-header').forEach(h => h.classList.remove('active'));
+                        if (!isOpen) {
+                            body.classList.add('open');
+                            header.classList.add('active');
+                        }
+                    };
+
+                    entry.appendChild(header);
+                    entry.appendChild(body);
+                    stepBlock.appendChild(entry);
+                });
+                container.appendChild(stepBlock);
+            });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

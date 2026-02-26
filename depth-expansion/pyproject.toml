@@ -1,0 +1,12 @@
+[project]
+name = "depth-expansion"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "datasets>=4.5.0",
+    "torch>=2.10.0",
+    "tqdm>=4.67.3",
+    "transformers>=5.1.0",
+]

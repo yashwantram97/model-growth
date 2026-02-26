@@ -1,0 +1,26 @@
+# Checkpoints & logs
+checkpoints/
+training_log*.jsonl
+training_log*.txt
+stats.json
+
+# Local data
+synth_local/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Resolved/temp docs
+*.resolved
