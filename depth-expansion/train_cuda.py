@@ -117,7 +117,16 @@ class SYNTHStream(IterableDataset):
         if self.full_path:
             print(f"[DATA] Loading synth_local from: {self.full_path}")
         else:
-            print(f"[DATA] ⚠️  synth_local not found — will use dummy data")
+            save_path = os.path.join(_HERE, local_path)
+            print(f"[DATA] synth_local not found — downloading PleIAs/SYNTH from HuggingFace...")
+            try:
+                from datasets import load_dataset
+                ds = load_dataset("PleIAs/SYNTH", split="train")
+                ds.save_to_disk(save_path)
+                self.full_path = save_path
+                print(f"[DATA] Download complete — {len(ds):,} rows saved to {save_path}")
+            except Exception as e:
+                print(f"[DATA] ⚠️  Download failed: {e} — will use dummy data")
 
     def _build_text(self, ex: dict) -> Optional[str]:
         lang = ex.get("language", "")
