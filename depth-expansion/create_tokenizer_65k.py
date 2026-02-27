@@ -46,7 +46,9 @@ for merge in merges:
     else:
         a, b = merge.split(" ", 1)
     result = a + b
-    if result in kept_tokens:
+    # All three tokens must be in kept vocab: if either input was removed
+    # (ID >= TARGET), the merge rule references an out-of-vocabulary token.
+    if a in kept_tokens and b in kept_tokens and result in kept_tokens:
         new_merges.append(merge)
     else:
         skipped += 1
