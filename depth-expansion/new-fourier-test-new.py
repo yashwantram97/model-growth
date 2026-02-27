@@ -525,7 +525,12 @@ def main():
         pause_handler.resume()
 
     # ── Device ───────────────────────────────────────────────────────────────
-    device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"🔥 Using device: {device.type}")
 
     # ── Tokenizer: TSAI 131K ─────────────────────────────────────────────────

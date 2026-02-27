@@ -144,14 +144,24 @@ from dataclasses import dataclass
 # ── Triton Kernel Imports ────────────────────────────────────────────────────
 # All kernels have automatic PyTorch fallbacks when Triton/fla unavailable.
 try:
-    from ..kernels import (
-        HAS_TRITON, HAS_FLA,
-        triton_sparse_attention, pytorch_sparse_attention,
-        triton_sinkhorn_knopp, pytorch_sinkhorn_knopp,
-        triton_rmsnorm, pytorch_rmsnorm, TritonRMSNorm,
-        fla_gated_delta_rule,
-        fused_indexer_topk,
-    )
+    try:
+        from ..kernels import (
+            HAS_TRITON, HAS_FLA,
+            triton_sparse_attention, pytorch_sparse_attention,
+            triton_sinkhorn_knopp, pytorch_sinkhorn_knopp,
+            triton_rmsnorm, pytorch_rmsnorm, TritonRMSNorm,
+            fla_gated_delta_rule,
+            fused_indexer_topk,
+        )
+    except ImportError:
+        from kernels import (
+            HAS_TRITON, HAS_FLA,
+            triton_sparse_attention, pytorch_sparse_attention,
+            triton_sinkhorn_knopp, pytorch_sinkhorn_knopp,
+            triton_rmsnorm, pytorch_rmsnorm, TritonRMSNorm,
+            fla_gated_delta_rule,
+            fused_indexer_topk,
+        )
 except ImportError:
     HAS_TRITON = False
     HAS_FLA = False
