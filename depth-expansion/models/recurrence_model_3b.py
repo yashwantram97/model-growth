@@ -451,60 +451,51 @@ class ModelConfig:
 
 class LocalModelConfig:
     """
-    Scaled-down configuration for M4 Pro 24 GB local training (batch=2, seq=128).
+    Light-scale configuration matching new-fourier-test.py model scale (~160M params).
+    Targets M4 Pro 24 GB with batch=4, seq=512.
 
-    Root cause of OOM at ~2k steps:
-      _delta_rule_python materialises 4 outer-product tensors of shape
-      (B, H, head_dim, head_dim) at every timestep and keeps them all in the
-      autograd graph for backprop.  Peak activation memory per DeltaNet layer
-      per ponder pass ≈ 4 × T × B × H × head_dim² × 4 bytes (fp32).
+    DeltaNet backward memory (T doubles vs seq=256, H halves vs 32 — they cancel):
+      seq=512: 4 × 511 × 4 × 16 × 16² × 4 ≈ 128 MB/layer × 6 = 0.77 GB
+      seq=256: 4 × 255 × 4 × 32 × 16² × 4 ≈ 128 MB/layer × 6 = 0.77 GB  ← same
 
-      Old config (H=8, head_dim=64):
-        4 × 127 × 2 × 8 × 64² × 4 ≈ 133 MB/layer/pass
-        × 6 DeltaNet layers × Kmax=4 ponder × 2 (fwd+bwd) ≈ 6.4 GB — tight.
-
-      New config (H=16, head_dim=16): H×head_dim² = 16×256 = 4 096
-        vs old H×head_dim²=16×1024=16 384 → 4× reduction in S-state memory.
-        4 × 127 × 2 × 16 × 16² × 4 ≈ 17 MB/layer/pass
-        × 6 layers × 4 ponder × 2 ≈ 0.8 GB — significant headroom.
-
-    Full budget estimate (hidden=512, n_streams=1, seq=128, batch=2):
-      bf16 weights  ≈ 0.40 GB
-      AdamW states  ≈ 1.60 GB
-      KP table      ≈ 2.15 GB
-      Peak activations ≈ 3.2 GB
-      Total         ≈ 7–8 GB — fits comfortably in 24 GB
+    Full budget estimate (hidden=768, seq=512, batch=4):
+      bf16 weights  ≈ 0.31 GB  (~160M params)
+      AdamW states  ≈ 1.24 GB
+      KP table      ≈ 1.07 GB  (65536 × 8192 × 2 bytes, unchanged)
+      DeltaNet bwd  ≈ 0.77 GB  (same as previous config by T×H cancellation)
+      Other acts    ≈ 1.10 GB
+      Total         ≈ 4.5 GB — well within 24 GB
+      → Can safely use --batch 4 --seq 512 --accum 4 (8192 tokens/step)
     """
-    vocab_size  = 131072
-    hidden_size = 512
+    vocab_size  = 65536   # 2^16
+    hidden_size = 768
     num_layers  = 8
 
     # Attention Mix (75% DeltaNet / 25% GSA — same ratio as full model)
     num_deltanet_layers = 6
     num_gsa_layers      = 2
 
-    # DeltaNet — head_dim=16 gives H×head_dim²=16×256=4096, which is 4× less
-    # than head_dim=32 (16×1024=16384). Attention dim = 16×16=256; o_proj maps
-    # back to hidden_size=512, so layer I/O shape is unchanged.
-    delta_v_heads  = 16   # 16 heads × 16 head_dim = 256 attention dim
-    delta_head_dim = 16   # was 32; 4× less S-state (B,H,d,d) backward memory
-    delta_gate_dim = 16   # was 32; keep proportional to head_dim
+    # DeltaNet — head_dim stays 16; halve heads 32→16 to compensate for 2× seq.
+    # H × head_dim² = 16 × 256 = 4 096 — same backward memory at 2× seq length.
+    delta_v_heads  = 16
+    delta_head_dim = 16   # keep at 16 — critical for backward memory budget
+    delta_gate_dim = 16
 
     # GSA — head_dim=64, unchanged (GSA has no O(head_dim²) outer-product cost)
-    gsa_num_heads     = 8   # 512 / 64 = 8 heads
+    gsa_num_heads     = 12   # 768 / 64 = 12 heads
     gsa_head_dim      = 64
-    gsa_k_base        = 64
-    gsa_k_min         = 8
-    gsa_k_max         = 64   # was 128; halves sparse-attention buffer memory
+    gsa_k_base        = 32
+    gsa_k_min         = 4
+    gsa_k_max         = 64
     gsa_indexer_heads = 2
 
-    # MoE — halved experts + smaller FFNs to free ~300 MB weights & activations
+    # MoE — 4 real + 4 null experts; smaller FFN matching ~160M total param budget
     num_real_experts   = 4
     num_null_experts   = 4
     total_expert_slots = 8
     top_k              = 2
-    expert_intermediate_size        = 384   # was 512
-    shared_expert_intermediate_size = 768   # was 1024
+    expert_intermediate_size        = 512
+    shared_expert_intermediate_size = 1024
     data_sparsity = 0.5
 
     # MTP — disabled to save memory

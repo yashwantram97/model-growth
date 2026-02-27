@@ -227,7 +227,7 @@ def sample_generate_single_fast(
     max_valid_id = vocab_size - 1
 
     prompt_len = min(int(prompt_ids.size(0)), max_seq_len - 1)
-    prompt_ids = prompt_ids[:prompt_len]
+    prompt_ids = prompt_ids[:prompt_len].clamp(0, max_valid_id)
 
     buf = torch.empty((1, max_seq_len), dtype=torch.long, device=device)
     buf[:, :prompt_len] = prompt_ids.unsqueeze(0)
@@ -318,22 +318,21 @@ class SYNTHStream(IterableDataset):
             lang = ex.get("language")
             if not lang or (isinstance(lang, str) and lang.lower() != self.filter_language.lower()):
                 return None
+        # Use plain-text separators — no special tokens.
+        # TSAI 131K maps <|im_start|>, <think>, etc. → IDs > 65535, which all
+        # clamp to the same token (65535) and inject noise at every boundary.
+        # Plain ASCII headers avoid this completely (matches train.py fix).
         parts = []
-        query = ex.get("query", "").strip()
+        query     = (ex.get("query")               or "").strip()
+        reasoning = (ex.get("synthetic_reasoning") or "").strip()
+        answer    = (ex.get("synthetic_answer")    or "").strip()
         if self.include_query and query:
-            parts.append(f"<|im_start|>user\n{query}<|im_end|>")
-        reasoning = ex.get("synthetic_reasoning", "").strip()
-        answer    = ex.get("synthetic_answer",    "").strip()
-        assistant_parts = []
+            parts.append(f"Question: {query}")
         if self.include_reasoning and reasoning:
-            assistant_parts.append(f"`<think>`\n{reasoning}\n`</think>`")
+            parts.append(f"Thinking: {reasoning}")
         if self.include_answer and answer:
-            assistant_parts.append(answer)
-        if assistant_parts:
-            parts.append(f"<|im_start|>assistant\n{self.combine_separator.join(assistant_parts)}")
-        if not parts:
-            return None
-        return "\n".join(parts)
+            parts.append(f"Answer: {answer}")
+        return "\n\n".join(parts) if parts else None
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         try:
@@ -374,10 +373,10 @@ class SYNTHStream(IterableDataset):
                 return
             except Exception as e2:
                 print(f"❌ HuggingFace streaming also failed: {e2}")
-                print("⚠️ Switching to dummy data generator (vocab_size=131072)")
+                print("⚠️ Switching to dummy data generator (vocab_size=65536)")
                 while True:
-                    yield {"ids":     torch.randint(0, 131072, (self.seq_len,), dtype=torch.long),
-                           "targets": torch.randint(0, 131072, (self.seq_len,), dtype=torch.long)}
+                    yield {"ids":     torch.randint(0, 65536, (self.seq_len,), dtype=torch.long),
+                           "targets": torch.randint(0, 65536, (self.seq_len,), dtype=torch.long)}
 
         buf: List[int] = []
         while True:
@@ -541,14 +540,20 @@ def main():
     vocab_size = len(tokenizer)   # 131075 (131072 vocab + 3 special tokens)
     print(f"   Vocab size: {tokenizer.vocab_size:,}  |  with specials: {vocab_size:,}")
 
+    # ── Model config (needed before KP table build) ───────────────────────────
+    cfg = LocalModelConfig()
+
     # ── Kronecker Embeddings (replaces PFCodec / discover_chars) ─────────────
     # Byte-level: 256 bytes × 32 positions = D=8192 dimensional vectors.
     kron_cfg = KroneckerConfig(CHAR_DIM=256, POS_DIM=32, D=8192)
     pf_codec = KroneckerEmbeddings(kron_cfg)
 
+    # Build KP table for model vocab only (cfg.vocab_size=65536).
+    # TSAI tokenizer has 131075 entries but the model embedding/lm_head are
+    # sized to cfg.vocab_size; IDs above that are clamped before the forward pass.
     print("🔄 Building BPE vocab list for Kronecker embeddings...")
     bpe_vocab = []
-    for i in tqdm(range(vocab_size), desc="Vocab"):
+    for i in tqdm(range(cfg.vocab_size), desc="Vocab"):
         try:
             bpe_vocab.append(tokenizer.decode([i]))
         except Exception:
@@ -569,7 +574,7 @@ def main():
     total_p = sum(p.numel() for p in model.parameters())
     print(f"   Params: {total_p:,} ({total_p/1e6:.1f}M)")
     print(f"   Est. memory: weights={total_p*2/1e9:.2f}GB (bf16)  "
-          f"Adam={total_p*8/1e9:.2f}GB  KP-table={vocab_size*8192*2/1e9:.2f}GB")
+          f"Adam={total_p*8/1e9:.2f}GB  KP-table={cfg.vocab_size*8192*2/1e9:.2f}GB")
 
     # ── Checkpoint Resume ─────────────────────────────────────────────────────
     start_step     = 0
@@ -597,11 +602,11 @@ def main():
     # ── Data Loader ───────────────────────────────────────────────────────────
     print(f"📂 Initializing Data Loader (Start Step: {start_step})...")
     dataset = SYNTHStream(
-        tokenizer, seq_len=128, batch_size=2,
+        tokenizer, seq_len=512, batch_size=4,
         seed=args.seed, start_step=start_step
     )
     # num_workers=0: required on MPS (forked workers crash with Metal)
-    train_loader   = DataLoader(dataset, batch_size=2, num_workers=0)
+    train_loader   = DataLoader(dataset, batch_size=4, num_workers=0)
     train_iterator = iter(train_loader)
 
     prompt_sampler = SYNTHPromptSampler(
@@ -720,8 +725,9 @@ def main():
         t0 = time.time()
 
         B, Seq  = input_ids.shape
-        inp_seq = input_ids[:, :-1]
-        tgt_seq = target_ids[:, 1:]
+        # Clamp to model vocab (TSAI 131K has IDs up to 131074; model uses 65536)
+        inp_seq = input_ids[:, :-1].clamp(0, cfg.vocab_size - 1)
+        tgt_seq = target_ids[:, 1:].clamp(0, cfg.vocab_size - 1)
 
         do_credit      = (step >= PONDER_START)
         do_diagnostics = (step % 10 == 0)
@@ -739,7 +745,7 @@ def main():
             return_memory=False,
         )
 
-        ntp_vocab = logits_ntp.shape[-1]   # cfg.vocab_size (131072), not len(tokenizer) (131075)
+        ntp_vocab = logits_ntp.shape[-1]   # cfg.vocab_size (65536)
         lm_loss  = criterion(logits_ntp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
         mtp_loss = (criterion(logits_mtp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
                     if logits_mtp is not None else torch.tensor(0.0, device=device))

@@ -24,3 +24,5 @@ build/
 
 # Resolved/temp docs
 *.resolved
+
+log_kronecker_adaptive.txt
