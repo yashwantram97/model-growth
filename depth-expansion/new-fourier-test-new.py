@@ -533,16 +533,11 @@ def main():
         device = torch.device("cpu")
     print(f"🔥 Using device: {device.type}")
 
-    # ── Tokenizer: TSAI 131K ─────────────────────────────────────────────────
-    tokenizer_path = os.path.join(_script_dir, "tokenizer")
-    if not os.path.exists(tokenizer_path):
-        raise FileNotFoundError(
-            f"TSAI 131K tokenizer not found at: {tokenizer_path}\n"
-            "Expected: depth-expansion/tokenizer/ with tokenizer.json etc."
-        )
-    print(f"📖 Loading TSAI 131K tokenizer from: {tokenizer_path}")
-    tokenizer  = AutoTokenizer.from_pretrained(tokenizer_path)
-    vocab_size = len(tokenizer)   # 131075 (131072 vocab + 3 special tokens)
+    # ── Tokenizer: GPT-2 (50,257 tokens, all IDs < model vocab_size=65536) ──────
+    print(f"📖 Loading GPT-2 tokenizer (vocab=50,257, fits model vocab_size=65536=2^16)")
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    vocab_size = len(tokenizer)   # 50257 — all IDs < 65536, no clamping noise
     print(f"   Vocab size: {tokenizer.vocab_size:,}  |  with specials: {vocab_size:,}")
 
     # ── Model config (needed before KP table build) ───────────────────────────
