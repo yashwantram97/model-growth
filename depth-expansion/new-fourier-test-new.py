@@ -609,11 +609,11 @@ def main():
     # ── Data Loader ───────────────────────────────────────────────────────────
     print(f"📂 Initializing Data Loader (Start Step: {start_step})...")
     dataset = SYNTHStream(
-        tokenizer, seq_len=512, batch_size=4,
+        tokenizer, seq_len=1024, batch_size=8,
         seed=args.seed, start_step=start_step
     )
-    # num_workers=0: required on MPS (forked workers crash with Metal)
-    train_loader   = DataLoader(dataset, batch_size=4, num_workers=0)
+    # num_workers=0 required on MPS; use 2 on CUDA (L4/A100)
+    train_loader   = DataLoader(dataset, batch_size=8, num_workers=2)
     train_iterator = iter(train_loader)
 
     prompt_sampler = SYNTHPromptSampler(

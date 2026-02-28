@@ -517,7 +517,7 @@ class LocalModelConfig:
     sinkhorn_iters = 1
 
     # Context and RoPE
-    max_seq_len = 512
+    max_seq_len = 1024
     rope_base   = 10000
 
     # Training
