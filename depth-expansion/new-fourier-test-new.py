@@ -609,7 +609,7 @@ def main():
     # ── Data Loader ───────────────────────────────────────────────────────────
     print(f"📂 Initializing Data Loader (Start Step: {start_step})...")
     dataset = SYNTHStream(
-        tokenizer, seq_len=1024, batch_size=4,
+        tokenizer, seq_len=512, batch_size=4,
         seed=args.seed, start_step=start_step
     )
     # num_workers=0 required on MPS; use 2 on CUDA (L4/A100)
@@ -767,20 +767,24 @@ def main():
             # Collect h_1 tensors from first recurrence step across all layers
             h1_tensors = [s.get('h_1') for s in stats if s.get('h_1') is not None]
             if h1_tensors:
-                # Use the last layer's h_1 as the "k=1 only" logit estimate
-                h1_last  = h1_tensors[-1]          # [B, T, D]
-                logits_1 = model.lm_head(model.norm(h1_last))
+                # Use the last layer's h_1 as the "k=1 only" logit estimate.
+                # Everything inside no_grad to avoid autograd graph for [B,T,vocab].
+                # logits_1 is deleted before prob_2 is allocated to keep peak memory low.
+                h1_last = h1_tensors[-1]          # [B, T, D]
                 with torch.no_grad():
-                    prob_1  = F.softmax(logits_1, dim=-1)
-                    ent_1   = -(prob_1 * torch.log(prob_1 + 1e-9)).sum(dim=-1).mean()
-                    prob_2  = F.softmax(logits_ntp, dim=-1)
-                    ent_2   = -(prob_2 * torch.log(prob_2 + 1e-9)).sum(dim=-1).mean()
+                    logits_1 = model.lm_head(model.norm(h1_last))
+                    prob_1   = F.softmax(logits_1, dim=-1)
+                    ent_1    = -(prob_1 * torch.log(prob_1 + 1e-9)).sum(dim=-1).mean()
+                    nll_1    = criterion(logits_1.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
+                    del logits_1, prob_1   # free before allocating prob_2
+                    prob_2   = F.softmax(logits_ntp, dim=-1)
+                    ent_2    = -(prob_2 * torch.log(prob_2 + 1e-9)).sum(dim=-1).mean()
+                    del prob_2
                     d_ent_global = (ent_2 - ent_1).item()
                     delta_h      = d_ent_global
-                    nll_1        = criterion(logits_1.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
                     d_nll_global = (lm_loss - nll_1).item()
                     nll_1_val    = nll_1
-                    del prob_1, prob_2, ent_1, ent_2, nll_1, logits_1
+                    del ent_1, ent_2, nll_1
 
         # Economic Fix: Ponder Credit (The Coupon)
         total_ponder_loss = sum([s['p_loss'] for s in stats]) if stats else torch.tensor(0.0, device=device)
