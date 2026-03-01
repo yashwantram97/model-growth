@@ -648,7 +648,7 @@ def main():
     # ── DUAL-ASCENT COMPUTE CONTROLLER (unchanged) ────────────────────────────
     TARGET_K = 2.4
     DUAL_LR  = 5e-5
-    LAMBDA_MIN = 1e-4
+    LAMBDA_MIN = 5e-5
     LAMBDA_MAX = 5e-2
     AUDIT_PROB = 0.05
 
@@ -711,8 +711,8 @@ def main():
         force_2_sched = (step < 800)
 
         PONDER_START = 1200
-        HALT_THR     = 0.10
-        REWARD_ETA   = 2.0
+        HALT_THR     = 0.05
+        REWARD_ETA   = 3.0
 
         audit_force_2     = (step >= PONDER_START) and (random.random() < AUDIT_PROB)
         force_2_effective = force_2_sched or audit_force_2

@@ -591,7 +591,7 @@ class ContinueHead(nn.Module):
     starts with a strong preference for halting early (avoids runaway
     recurrence at the start of training).
     """
-    def __init__(self, in_dim: int, hidden: int = 32, bias_init: float = -2.0):
+    def __init__(self, in_dim: int, hidden: int = 32, bias_init: float = -1.0):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(in_dim, hidden),
