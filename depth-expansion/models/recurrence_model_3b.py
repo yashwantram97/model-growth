@@ -1834,7 +1834,7 @@ class LightningDecoderLayer(nn.Module):
         # Ponder components (only when use_ponder=True)
         if use_ponder:
             self.Kmax = 4
-            self.register_buffer('alpha', torch.tensor([1.0, 0.7, 0.5, 0.35]))
+            self.register_buffer('alpha', torch.tensor([1.0, 0.85, 0.72, 0.60]))
             self.layer_emb     = nn.Parameter(torch.zeros(16))
             self.continue_head = ContinueHead(in_dim=21)  # 5 ponder features + 16 layer_emb
 

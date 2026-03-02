@@ -576,7 +576,18 @@ def main():
         pf_codec=pf_codec,
         use_ponder=True,
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, fused=False)
+    # Separate param group: ContinueHead + layer_emb get 10x LR so ponder
+    # gradient signal dominates over LM loss drag on early layers.
+    ponder_params, base_params = [], []
+    for name, p in model.named_parameters():
+        if 'continue_head' in name or 'layer_emb' in name:
+            ponder_params.append(p)
+        else:
+            base_params.append(p)
+    optimizer = torch.optim.AdamW([
+        {'params': base_params,   'lr': 3e-4},
+        {'params': ponder_params, 'lr': 3e-3},  # 10x: ponder signal wins
+    ], fused=False)
 
     total_p = sum(p.numel() for p in model.parameters())
     print(f"   Params: {total_p:,} ({total_p/1e6:.1f}M)")
@@ -648,8 +659,8 @@ def main():
     # ── DUAL-ASCENT COMPUTE CONTROLLER (unchanged) ────────────────────────────
     TARGET_K = 2.4
     DUAL_LR  = 5e-5
-    LAMBDA_MIN = 0.0
-    LAMBDA_MAX = 5e-2
+    LAMBDA_MIN = -5e-2   # negative → direct depth reward when avg_k < TARGET_K
+    LAMBDA_MAX =  5e-2
     AUDIT_PROB = 0.05
 
     DEADBAND_TRIGGER_LAM    = 0.50
@@ -704,13 +715,13 @@ def main():
             progress    = (step - decay_start) / (target_total_steps - decay_start)
             progress    = min(max(progress, 0.0), 1.0)
             lr = min_lr_val + 0.5 * (max_lr_val - min_lr_val) * (1 + math.cos(math.pi * progress))
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+        optimizer.param_groups[0]['lr'] = lr           # base params
+        optimizer.param_groups[1]['lr'] = lr * 10.0    # ponder params (10x ratio preserved)
 
         # Ponder & Force Schedule
         PONDER_START = 1200
         HALT_THR     = 0.01
-        REWARD_ETA   = 3.0
+        REWARD_ETA   = 5.0
 
         force_2_sched = (step < PONDER_START)
 
