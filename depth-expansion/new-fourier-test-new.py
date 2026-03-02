@@ -609,7 +609,7 @@ def main():
     # ── Data Loader ───────────────────────────────────────────────────────────
     print(f"📂 Initializing Data Loader (Start Step: {start_step})...")
     dataset = SYNTHStream(
-        tokenizer, seq_len=512, batch_size=4,
+        tokenizer, seq_len=1024, batch_size=4,
         seed=args.seed, start_step=start_step
     )
     # num_workers=0 required on MPS; use 2 on CUDA (L4/A100)
@@ -648,7 +648,7 @@ def main():
     # ── DUAL-ASCENT COMPUTE CONTROLLER (unchanged) ────────────────────────────
     TARGET_K = 2.4
     DUAL_LR  = 5e-5
-    LAMBDA_MIN = 5e-5
+    LAMBDA_MIN = 0.0
     LAMBDA_MAX = 5e-2
     AUDIT_PROB = 0.05
 
@@ -708,11 +708,11 @@ def main():
             param_group['lr'] = lr
 
         # Ponder & Force Schedule
-        force_2_sched = (step < 800)
-
         PONDER_START = 1200
-        HALT_THR     = 0.05
+        HALT_THR     = 0.01
         REWARD_ETA   = 3.0
+
+        force_2_sched = (step < PONDER_START)
 
         audit_force_2     = (step >= PONDER_START) and (random.random() < AUDIT_PROB)
         force_2_effective = force_2_sched or audit_force_2
@@ -739,23 +739,24 @@ def main():
         do_credit      = (step >= PONDER_START)
         do_diagnostics = (step % 10 == 0)
 
-        # Model3B ponder forward
+        # Model3B ponder forward — bf16 mixed precision
         # Returns: logits_ntp, logits_mtp, aux_loss, memory_stream_out, layer_stats
-        logits_ntp, logits_mtp, aux_loss, _, stats = model(
-            inp_seq,
-            next_token_ids=tgt_seq,
-            lambda_p=lambda_p,
-            force_2=force_2_effective,
-            halt_thr=HALT_THR,
-            capture_h1=do_credit,
-            return_loss=True,
-            return_memory=False,
-        )
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+            logits_ntp, logits_mtp, aux_loss, _, stats = model(
+                inp_seq,
+                next_token_ids=tgt_seq,
+                lambda_p=lambda_p,
+                force_2=force_2_effective,
+                halt_thr=HALT_THR,
+                capture_h1=do_credit,
+                return_loss=True,
+                return_memory=False,
+            )
 
-        ntp_vocab = logits_ntp.shape[-1]   # cfg.vocab_size (65536)
-        lm_loss  = criterion(logits_ntp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
-        mtp_loss = (criterion(logits_mtp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
-                    if logits_mtp is not None else torch.tensor(0.0, device=device))
+            ntp_vocab = logits_ntp.shape[-1]   # cfg.vocab_size (65536)
+            lm_loss  = criterion(logits_ntp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
+            mtp_loss = (criterion(logits_mtp.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
+                        if logits_mtp is not None else torch.tensor(0.0, device=device))
 
         # Recurrence Diagnostics — compare k=1 hidden state to final
         d_ent_global = 0.0
@@ -771,11 +772,12 @@ def main():
                 # Everything inside no_grad to avoid autograd graph for [B,T,vocab].
                 # logits_1 is deleted before prob_2 is allocated to keep peak memory low.
                 h1_last = h1_tensors[-1]          # [B, T, D]
-                with torch.no_grad():
+                with torch.no_grad(), \
+                     torch.autocast(device_type=device.type, dtype=torch.bfloat16):
                     logits_1 = model.lm_head(model.norm(h1_last))
-                    prob_1   = F.softmax(logits_1, dim=-1)
-                    ent_1    = -(prob_1 * torch.log(prob_1 + 1e-9)).sum(dim=-1).mean()
                     nll_1    = criterion(logits_1.reshape(-1, ntp_vocab), tgt_seq.reshape(-1))
+                    prob_1   = F.softmax(logits_1, dim=-1)   # bf16 via autocast
+                    ent_1    = -(prob_1 * torch.log(prob_1 + 1e-9)).sum(dim=-1).mean()
                     del logits_1, prob_1   # free before allocating prob_2
                     prob_2   = F.softmax(logits_ntp, dim=-1)
                     ent_2    = -(prob_2 * torch.log(prob_2 + 1e-9)).sum(dim=-1).mean()
@@ -791,7 +793,7 @@ def main():
         delta_ce = torch.tensor(0.0, device=device)
         if nll_1_val is not None:
             delta_ce = (nll_1_val - lm_loss).clamp(min=0)
-        total_ponder_loss = torch.relu(total_ponder_loss - REWARD_ETA * delta_ce)
+        total_ponder_loss = (total_ponder_loss - REWARD_ETA * delta_ce).clamp(min=-0.5)
 
         total_loss = lm_loss + 0.3 * mtp_loss + aux_loss + total_ponder_loss
         total_loss.backward()
