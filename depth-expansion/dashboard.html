@@ -855,8 +855,8 @@
         // --------------------------------------------------------
         // PARSERS (Robust)
         // --------------------------------------------------------
-        const RE_ADAPTIVE_STEP = /STEP:\s*(\d+)\s*(\[AUDIT\])?\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*([\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+).*?\|\s*λ_p:\s*([\d\.e\-\+]+)(?:\[DB\])?\s*\|\s*CTRL_ERR:\s*([\d\.\+\-]+)\s*\|\s*P_NR:\s*([\d\.]+)%/;
-        const RE_ADAPTIVE_STEP_OLD = /STEP:\s*(\d+)\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*([\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+)/;
+        const RE_ADAPTIVE_STEP = /STEP:\s*(\d+)\s*(\[AUDIT\])?\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*(-?[\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+).*?\|\s*λ_p:\s*([\d\.e\-\+]+)(?:\[DB\])?\s*\|\s*CTRL_ERR:\s*([\d\.\+\-]+)\s*\|\s*P_NR:\s*([\d\.]+)%/;
+        const RE_ADAPTIVE_STEP_OLD = /STEP:\s*(\d+)\s*\|\s*TOT:\s*([\d\.]+)\s*\|\s*LM:\s*([\d\.]+)\s*\|\s*PONDER:\s*(-?[\d\.]+).*?\|\s*LR:\s*([\d\.e\-\+]+)\s*\|\s*GRAD:\s*([\d\.]+)/;
         const RE_BATON = /BATON:\s*([\d\.]+)/;
         const RE_LAYER = /L(\d+):\s*k_exec=(\d+),\s*expected_k=([\d\.]+).*?p_mu=([\d\.]+).*?d_rel=([\d\.]+).*?(?:Δh|h_dif)=([\d\.\-]+).*?(?:Δp|p_dif)=([\d\.\-]+)/u;
         const RE_TAIL = /tail:\s*≥2:(\d+)%.*?≥3:(\d+)%.*?≥4:(\d+)%/;

@@ -720,7 +720,7 @@ def main():
 
         # Ponder & Force Schedule
         PONDER_START = 1200
-        HALT_THR     = 0.01
+        HALT_THR     = 0.10
         REWARD_ETA   = 5.0
 
         force_2_sched = (step < PONDER_START)
