@@ -659,7 +659,7 @@ def main():
     # ── DUAL-ASCENT COMPUTE CONTROLLER (unchanged) ────────────────────────────
     TARGET_K = 2.4
     DUAL_LR  = 5e-5
-    LAMBDA_MIN = -5e-2   # negative → direct depth reward when avg_k < TARGET_K
+    LAMBDA_MIN = 0.0     # floor at 0 — negative λ_p doubles gradient noise with no benefit
     LAMBDA_MAX =  5e-2
     AUDIT_PROB = 0.05
 
@@ -804,7 +804,7 @@ def main():
         delta_ce = torch.tensor(0.0, device=device)
         if nll_1_val is not None:
             delta_ce = (nll_1_val - lm_loss).clamp(min=0)
-        total_ponder_loss = (total_ponder_loss - REWARD_ETA * delta_ce).clamp(min=-0.5)
+        total_ponder_loss = (total_ponder_loss - REWARD_ETA * delta_ce.detach()).clamp(min=-0.5)
 
         total_loss = lm_loss + 0.3 * mtp_loss + aux_loss + total_ponder_loss
         total_loss.backward()
