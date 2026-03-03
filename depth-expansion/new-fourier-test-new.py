@@ -659,7 +659,7 @@ def main():
     # ── DUAL-ASCENT COMPUTE CONTROLLER (unchanged) ────────────────────────────
     TARGET_K = 2.4
     DUAL_LR  = 5e-5
-    LAMBDA_MIN = 0.0     # floor at 0 — negative λ_p doubles gradient noise with no benefit
+    LAMBDA_MIN = -5e-3   # mild negative depth-reward; safe now that delta_ce is detached
     LAMBDA_MAX =  5e-2
     AUDIT_PROB = 0.05
 
